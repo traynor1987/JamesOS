@@ -24,7 +24,7 @@ jobs:
         run: 'yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses'
       - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a
         with: {gradle-version: '8.11.1'}
-      - run: "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;35.0.0'
+      - run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;35.0.0''
       - name: Validate release version
         env: {VERSION_NAME: '${{ inputs.version_name }}', VERSION_CODE: '${{ inputs.version_code }}'}
         run: |
