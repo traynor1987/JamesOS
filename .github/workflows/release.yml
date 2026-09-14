@@ -34,13 +34,15 @@ jobs:
           [[ "$VERSION_CODE" =~ ^[0-9]+$ ]]
       - name: Materialize protected Samsung Health Sensor SDK
         env:
-          SAMSUNG_HEALTH_SENSOR_AAR_BASE64: '${{ secrets.SAMSUNG_HEALTH_SENSOR_AAR_BASE64 }}'
+          SAMSUNG_HEALTH_SENSOR_AAR_BASE64_PART_1: '${{ secrets.SAMSUNG_HEALTH_SENSOR_AAR_BASE64_PART_1 }}'
+          SAMSUNG_HEALTH_SENSOR_AAR_BASE64_PART_2: '${{ secrets.SAMSUNG_HEALTH_SENSOR_AAR_BASE64_PART_2 }}'
         run: |
           set -euo pipefail
           umask 077
-          test -n "$SAMSUNG_HEALTH_SENSOR_AAR_BASE64"
+          test -n "$SAMSUNG_HEALTH_SENSOR_AAR_BASE64_PART_1"
+          test -n "$SAMSUNG_HEALTH_SENSOR_AAR_BASE64_PART_2"
           aar_path="$RUNNER_TEMP/samsung-health-sensor-api-1.4.1.aar"
-          printf '%s' "$SAMSUNG_HEALTH_SENSOR_AAR_BASE64" | base64 --decode > "$aar_path"
+          printf '%s%s' "$SAMSUNG_HEALTH_SENSOR_AAR_BASE64_PART_1" "$SAMSUNG_HEALTH_SENSOR_AAR_BASE64_PART_2" | base64 --decode > "$aar_path"
           test -s "$aar_path"
           unzip -tqq "$aar_path"
           chmod 600 "$aar_path"
