@@ -1,0 +1,114 @@
+name: Publish James release
+on:
+  workflow_dispatch:
+    inputs:
+      version_name: {description: 'Phone version, e.g. 0.3.195', required: true}
+      version_code: {description: 'Increasing Android version code', required: true}
+      wear_version_name: {description: 'Wear version', required: true, default: '0.2.2'}
+permissions:
+  contents: read
+concurrency: {group: james-release, cancel-in-progress: false}
+jobs:
+  release:
+    # Releases are trusted, manual main-branch operations only. Fork pull requests
+    # never enter this workflow and therefore cannot read the environment secrets.
+    if: github.ref == 'refs/heads/main'
+    environment: james-release
+    runs-on: ubuntu-latest
+    permissions: {contents: write}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with: {distribution: temurin, java-version: '17'}
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a
+        with: {gradle-version: '8.11.1'}
+      - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - name: Validate release version
+        env: {VERSION_NAME: '${{ inputs.version_name }}', VERSION_CODE: '${{ inputs.version_code }}'}
+        run: |
+          [[ "$VERSION_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$VERSION_CODE" =~ ^[0-9]+$ ]]
+      - name: Materialize protected Samsung Health Sensor SDK
+        env:
+          SAMSUNG_HEALTH_SENSOR_AAR_BASE64: '${{ secrets.SAMSUNG_HEALTH_SENSOR_AAR_BASE64 }}'
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "$SAMSUNG_HEALTH_SENSOR_AAR_BASE64"
+          aar_path="$RUNNER_TEMP/samsung-health-sensor-api-1.4.1.aar"
+          printf '%s' "$SAMSUNG_HEALTH_SENSOR_AAR_BASE64" | base64 --decode > "$aar_path"
+          test -s "$aar_path"
+          unzip -tqq "$aar_path"
+          chmod 600 "$aar_path"
+          printf 'JAMES_SAMSUNG_SENSOR_AAR_PATH=%s\n' "$aar_path" >> "$GITHUB_ENV"
+      - name: Materialize protected signing identity
+        env:
+          JAMES_SIGNING_KEYSTORE_BASE64: '${{ secrets.JAMES_SIGNING_KEYSTORE_BASE64 }}'
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "$JAMES_SIGNING_KEYSTORE_BASE64"
+          key_path="$RUNNER_TEMP/james-release.p12"
+          printf '%s' "$JAMES_SIGNING_KEYSTORE_BASE64" | base64 --decode > "$key_path"
+          test -s "$key_path"
+          chmod 600 "$key_path"
+          printf 'JAMES_KEYSTORE_PATH=%s\n' "$key_path" >> "$GITHUB_ENV"
+      - name: Verify permanent signing identity
+        env: {SIGNING_PASSWORD: '${{ secrets.JAMES_SIGNING_PASSWORD }}'}
+        run: |
+          set -euo pipefail
+          test -n "$SIGNING_PASSWORD"
+          test -s "$JAMES_KEYSTORE_PATH"
+          actual=$(keytool -exportcert -keystore "$JAMES_KEYSTORE_PATH" -alias james -storepass:env SIGNING_PASSWORD | sha256sum | cut -d ' ' -f 1)
+          expected=$(tr -d '\r\n' < signing/certificate.sha256)
+          test "$actual" = "$expected"
+      - name: Full validation and signed builds
+        env:
+          JAMES_KEYSTORE_PASSWORD: ${{ secrets.JAMES_SIGNING_PASSWORD }}
+          JAMES_KEY_ALIAS: james
+          JAMES_KEY_PASSWORD: ${{ secrets.JAMES_SIGNING_PASSWORD }}
+          JAMES_UPDATE_REPOSITORY: ${{ github.repository }}
+          JAMES_VERSION_CODE: ${{ inputs.version_code }}
+          JAMES_VERSION_NAME: ${{ inputs.version_name }}
+          JAMES_WEAR_VERSION_CODE: ${{ inputs.version_code }}
+          JAMES_WEAR_VERSION_NAME: ${{ inputs.wear_version_name }}
+        run: |
+          set -euo pipefail
+          python3 tools/audit_native.py
+          python3 tools/public_repo_gate.py
+          gradle --no-daemon :app:testDebugUnitTest :wear:testDebugUnitTest :app:assembleDebugAndroidTest :app:lintDebug :wear:lintDebug :app:assembleRelease :app:bundleRelease :wear:assembleRelease :app:lintRelease :wear:lintRelease
+      - name: Verify signed assets
+        env:
+          VERSION_NAME: ${{ inputs.version_name }}
+          VERSION_CODE: ${{ inputs.version_code }}
+          WEAR_VERSION_NAME: ${{ inputs.wear_version_name }}
+        run: |
+          set -euo pipefail
+          mkdir release
+          cp app/build/outputs/apk/release/app-release.apk release/james.apk
+          cp app/build/outputs/bundle/release/app-release.aab release/james.aab
+          cp wear/build/outputs/apk/release/wear-release.apk release/james-wear.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs release/james.apk > release/signature.txt
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs release/james-wear.apk > release/wear-signature.txt
+          python3 - <<'PY'
+          import pathlib,re
+          expected=pathlib.Path('signing/certificate.sha256').read_text().strip()
+          for path in ('release/signature.txt','release/wear-signature.txt'):
+              actual=re.search(r'Signer #1 certificate SHA-256 digest: ([0-9a-f]+)',pathlib.Path(path).read_text()).group(1)
+              assert actual==expected
+          PY
+          sha256sum release/james.apk > release/james.apk.sha256
+          sha256sum release/james-wear.apk > release/james-wear.apk.sha256
+          python3 - <<'PY'
+          import json,os
+          code=int(os.environ['VERSION_CODE'])
+          json.dump({'versionCode':code,'versionName':os.environ['VERSION_NAME']},open('release/james-version.json','w'))
+          json.dump({'versionCode':code,'versionName':os.environ['WEAR_VERSION_NAME'],'asset':'james-wear.apk'},open('release/james-wear-version.json','w'))
+          PY
+      - name: Publish only after validation succeeds
+        env: {GH_TOKEN: '${{ github.token }}', VERSION_NAME: '${{ inputs.version_name }}', WEAR_VERSION_NAME: '${{ inputs.wear_version_name }}'}
+        run: gh release create "v$VERSION_NAME" release/* --target "$GITHUB_SHA" --title "James $VERSION_NAME · Wear $WEAR_VERSION_NAME" --generate-notes --latest
+      - name: Remove temporary signing identity
+        if: always()
+        run: rm -f "$RUNNER_TEMP/james-release.p12" "$RUNNER_TEMP/samsung-health-sensor-api-1.4.1.aar"

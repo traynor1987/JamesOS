@@ -1,0 +1,357 @@
+package uk.co.james.ui
+
+import android.app.Application
+import android.net.Uri
+import androidx.lifecycle.*
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.tasks.await
+import kotlinx.serialization.json.*
+import uk.co.james.JamesApplication
+import uk.co.james.core.*
+import uk.co.james.database.StoredRecord
+import uk.co.james.imports.*
+import uk.co.james.health.HealthStatus
+import uk.co.james.updates.*
+import uk.co.james.state.mentalWellbeing
+import uk.co.james.state.MentalWellbeingSummary
+import uk.co.james.state.bodyBattery
+import uk.co.james.state.rightNowSummary
+import uk.co.james.state.JamesAlgorithmRegistry
+import uk.co.james.calibration.*
+import java.io.File
+
+class JamesViewModel(application: Application,private val saved: SavedStateHandle): AndroidViewModel(application) {
+    private var lastQuietHealthSync=0L
+    private var lastQuietWhoopSync=0L
+    val app=application as JamesApplication
+    val repo=app.repository
+    val records=repo.records.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),emptyList())
+    val wellbeingSettings=app.preferences.wellbeing.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),uk.co.james.settings.WellbeingSettings())
+    val energyTimeSettings=app.preferences.energyTime.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),uk.co.james.settings.EnergyTimeSettings())
+    private val stateRecords=repo.dao.observeStateInputs(java.time.Instant.now().minus(java.time.Duration.ofDays(40)).toString()).stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),emptyList())
+    val wellbeing=combine(stateRecords,wellbeingSettings) { rows, settings->uk.co.james.state.mentalWellbeing(rows,settings) }.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),MentalWellbeingSummary(today(),uk.co.james.state.WellbeingOutput(0,"VERY LOW","LEARNING", "LEARNING",emptyList()),uk.co.james.state.WellbeingOutput(0,"VERY LOW","LEARNING","LEARNING",emptyList()),uk.co.james.state.WellbeingOutput(50,"OKAY","LEARNING","LEARNING",emptyList()),0,0,0,0,0))
+    val imports=repo.imports.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),emptyList())
+    val theme=app.preferences.theme.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),"system")
+    val compactToday=app.preferences.compactToday.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),true)
+    val locationEnabled=app.preferences.location.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),false)
+    val activityEnabled=app.preferences.activity.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),false)
+    val allDayLocation=app.preferences.allDay.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),false)
+    val bodyBatterySettings=app.preferences.bodyBattery.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),uk.co.james.settings.BodyBatterySettings())
+    val wearSensors=app.preferences.wearSensors.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),uk.co.james.settings.WearSensorSettings())
+    val route=saved.getStateFlow("route","Today")
+    val tab=saved.getStateFlow("tab","Today")
+    val date=saved.getStateFlow("date",today())
+    val dialog=saved.getStateFlow("dialog","")
+    val draft=saved.getStateFlow("draft","{}")
+    val message=MutableStateFlow("")
+    val busy=MutableStateFlow(false)
+    val plan=MutableStateFlow<ImportPlan?>(null)
+    val merge=MutableStateFlow<MergeResult?>(null)
+    val health=MutableStateFlow(HealthStatus(false,emptySet(),"Checking availability…"))
+    val update=MutableStateFlow<AppUpdate?>(null)
+    val updateProgress=MutableStateFlow("")
+    val downloaded=MutableStateFlow<File?>(null)
+    private val updater=ApkUpdater(app)
+    private val wearUpdater=uk.co.james.wear.WearReleaseUpdater(app,app.wear)
+    private var wearRelease:uk.co.james.wear.WearRelease?=null
+    private var wearApk:File?=null
+    val wearStatus=app.wear.status
+    val wearStressCheck=app.wear.stressCheck
+    val wearTransfer=app.wear.transfer
+    private val updateCredentials=UpdateCredentials(app)
+    val githubAccess=MutableStateFlow(updateCredentials.configured())
+    fun saveGithubAccess(token:String)=action {withContext(Dispatchers.IO){updateCredentials.save(token)};githubAccess.value=true;message.value="GitHub access saved on this device."}
+    fun removeGithubAccess()=action {withContext(Dispatchers.IO){updateCredentials.clear()};githubAccess.value=false;update.value=null;downloaded.value=null;message.value="GitHub access removed."}
+    init {saved.get<String>("staged-import")?.let {path->action {preview(path)}};refreshPermissions();viewModelScope.launch {stateRecords.filter {it.isNotEmpty()}.debounce(5000).collectLatest {runCatching {app.wear.publish(it)}}};viewModelScope.launch {combine(stateRecords,wellbeingSettings) { rows, settings->rows to settings }.filter {it.first.isNotEmpty()&&it.second.enabled}.debounce(8000).collectLatest {(rows,settings)->runCatching {repo.persistWellbeing(uk.co.james.state.mentalWellbeing(rows,settings))}}};viewModelScope.launch {stateRecords.filter {it.isNotEmpty()}.debounce(6000).collectLatest {rows->runCatching {repo.persistBodyBattery(bodyBattery(rows,trigger="records_refresh"))}}};viewModelScope.launch {combine(stateRecords,energyTimeSettings){rows,settings->rows to settings}.filter {it.first.isNotEmpty()}.debounce(9000).collectLatest {(rows,settings)->runCatching {repo.persistRightNow(rightNowSummary(rows,settings))}}};viewModelScope.launch {runCatching {app.wear.refreshConnection()}};viewModelScope.launch(Dispatchers.IO) {runCatching {repo.recoverInterruptedCalibrationAnalysis();repo.ensureCalibrationProfiles();repo.bootstrapCalibrationEvidence()}}}
+    fun action(job:suspend ()->Unit) {if(!busy.compareAndSet(false,true))return;viewModelScope.launch {try{job()}catch(e:CancellationException){throw e}catch(e:Exception){message.value=e.message?:"The change could not be saved."}finally{busy.value=false}}}
+    fun navigate(value: String,main: Boolean=false) {saved["route"]=value;if(main)saved["tab"]=value}
+    fun date(value: String) {if(validDate(value))saved["date"]=value}
+    fun close() {saved["dialog"]="";saved["draft"]="{}";saved["editor-original"]="";saved["editor-store"]=""}
+    fun open(kind: String,entry: StoredRecord?=null) {
+        saved["dialog"]=kind;saved["editor-original"]=entry?.rawJson?:"";saved["editor-store"]=entry?.store?:if(kind=="Template")"eventTemplates" else if(kind=="RutEvent")"loggedEvents" else if(kind=="Note")"dailyNotes" else if(kind=="WeekReflection")"metadata" else "personalRecords"
+        val raw=entry?.raw()?:when(kind) {
+            "Note" -> fields("date" to p(date.value),"text" to p(""),"updatedAt" to p(now()))
+            "WeekReflection" -> fields("key" to p("week-reflection:"+java.time.LocalDate.parse(date.value).let {it.minusDays((it.dayOfWeek.value-1).toLong())}),"value" to fields("text" to p(""),"updatedAt" to p(now())))
+            "Template" -> fields("id" to p(id()),"title" to p(""),"emoji" to p("✨"),"points" to p(25),"category" to p("Other"),"type" to p("positive"),"enabled" to p(true),"isDefault" to p(false),"order" to p(records.value.count {it.store=="eventTemplates"}))
+            else -> personal(kind,fields("date" to p(date.value),"title" to p(""),"category" to p(if(kind=="TimeBlock")"Coding" else "Personal"),"period" to p("Morning"),"days" to JsonArray((0..6).map {p(it)}),"startDate" to p(today()),"archived" to p(false),"mood" to p(""),"energy" to p(""),"good" to p(""),"bad" to p(""),"important" to p(""),"note" to p(""),"end" to p(now())))
+        }
+        saved["draft"]=raw.toString()
+    }
+    /** New context/fact logging deliberately does not write a Rut point event. */
+    fun startContext(type:String,placeId:String?=null,placeName:String?=null)=action {
+        val visit=runCatching {uk.co.james.state.VisitType.valueOf(type)}.getOrElse {error("Unknown context type.")}
+        val stamp=now()
+        val day=uk.co.james.time.jamesDayWindow(records.value,java.time.Instant.parse(stamp))
+        val raw=personal("ContextPeriod",fields(
+            "title" to p("Context: "+visit.name.lowercase().replaceFirstChar {it.uppercase()}),
+            "visitType" to p(visit.name),"start" to p(stamp),"end" to p(""),
+            "placeId" to (placeId?.let(::p)?:JsonNull),"placeName" to (placeName?.let(::p)?:JsonNull),
+            "contextSource" to p("manual"),"jamesDayId" to p(day.id),
+            "algorithmVersion" to p(uk.co.james.state.JamesAlgorithmRegistry.CONTEXT_LOAD_VERSION),
+            "calibrationVersion" to p("1.0.0")
+        ),timestamp=stamp)
+        repo.save("personalRecords",raw);message.value="Context started."
+    }
+    fun endContext()=action {
+        val active=records.value.filter {it.kind=="ContextPeriod"}.mapNotNull {row->
+            val start=row.data().text("start").takeIf(::validTime)?.let {java.time.Instant.parse(it)}?:return@mapNotNull null
+            val end=row.data().text("end").takeIf(::validTime)?.let {java.time.Instant.parse(it)}
+            row.takeIf {start<=java.time.Instant.now()&&(end==null||end>java.time.Instant.now())}
+        }.maxByOrNull {it.timestamp}?:return@action
+        val stamp=now()
+        repo.save(active.store,active.raw().changed("data" to active.data().changed("end" to p(stamp)),"updatedAt" to p(stamp)),active.rawJson)
+        records.value.filter {it.kind=="ContextDifficultInterval"&&it.data().text("contextId")==active.recordId&&it.data().text("end").isBlank()}.forEach {row->
+            repo.save(row.store,row.raw().changed("data" to row.data().changed("end" to p(stamp)),"updatedAt" to p(stamp)),row.rawJson)
+        }
+        message.value="Context ended."
+    }
+    fun markDifficult()=action {
+        val active=uk.co.james.state.currentContext(records.value)
+        val context=active.active
+        if(context==null) { message.value="Start or set a context first."; return@action }
+        if(active.difficultActive)return@action
+        val stamp=now()
+        repo.save("personalRecords",personal("ContextDifficultInterval",fields("contextId" to p(context.id),"start" to p(stamp),"end" to p(""),"algorithmVersion" to p(uk.co.james.state.JamesAlgorithmRegistry.CONTEXT_LOAD_VERSION)),timestamp=stamp))
+        message.value="Difficult active."
+    }
+    fun endDifficult()=action {
+        val row=records.value.filter {it.kind=="ContextDifficultInterval"&&it.data().text("end").isBlank()}.maxByOrNull {it.timestamp}?:return@action
+        val stamp=now()
+        repo.save(row.store,row.raw().changed("data" to row.data().changed("end" to p(stamp)),"updatedAt" to p(stamp)),row.rawJson)
+        message.value="Difficult period ended."
+    }
+    fun logLifeActivity(activity:String)=action {
+        require(activity in listOf("Gym","Gaming","Cinema","Walk","Personal project","Went out","Other"))
+        val stamp=now()
+        repo.save("personalRecords",personal("LifeFactActivity",fields("title" to p(activity),"activityType" to p(activity.uppercase().replace(" ","_")),"date" to p(today()),"algorithmVersion" to p(uk.co.james.state.JamesAlgorithmRegistry.LIFE_BALANCE_VERSION)),timestamp=stamp))
+        message.value="Activity recorded."
+    }
+    fun logDifficultInteraction(type:String,person:String?=null)=action {
+        val subtype=runCatching {uk.co.james.state.DifficultInteractionType.valueOf(type)}.getOrElse {error("Unknown interaction type.")}
+        val context=uk.co.james.state.currentContext(records.value).active
+        val stamp=now()
+        repo.save("personalRecords",personal("DifficultInteraction",fields("title" to p(subtype.name.lowercase().replace('_',' ').replaceFirstChar {it.uppercase()}),"subtype" to p(subtype.name),"person" to (person?.takeIf {it.isNotBlank()}?.let(::p)?:JsonNull),"contextId" to (context?.id?.let(::p)?:JsonNull),"date" to p(today()),"algorithmVersion" to p(uk.co.james.state.JamesAlgorithmRegistry.CONTEXT_LOAD_VERSION)),timestamp=stamp))
+        message.value="Difficult interaction recorded."
+    }
+    // Kept for compatibility with historical UI callers; future records are facts, not point pulls.
+    fun logJamesShout(source:String)=logDifficultInteraction("RAISED_VOICE",source)
+    fun logJamesShoutPhrase(phrase:String)=logDifficultInteraction(when(phrase) {"Fuck off"->"INSULT_HOSTILITY";"Cunt"->"INSULT_HOSTILITY";else->"CONTROLLING"},null)
+    fun wellbeingSettings(v:uk.co.james.settings.WellbeingSettings)=action {app.preferences.wellbeing(v);message.value="Mental wellbeing settings saved."}
+    fun energyTimeSettings(v:uk.co.james.settings.EnergyTimeSettings)=action {app.preferences.energyTime(v);message.value="Energy & Time settings saved."}
+    fun compactToday(value:Boolean)=action {app.preferences.compactToday(value);message.value=if(value)"Compact Today selected." else "Classic Today selected."}
+    fun bodyBatterySettings(v:uk.co.james.settings.BodyBatterySettings)=action {
+        app.preferences.bodyBattery(v);repo.setting("body-battery-recovery-aware-strain",p(v.recoveryAwareStrain))
+        message.value="Body Battery calibration setting saved."
+    }
+    fun resetWellbeingBaseline()=action {repo.resetWellbeingBaseline();message.value="Personal wellbeing baseline reset. Your health and timeline data remain untouched."}
+    fun wellbeingCheckIn(mood:String,energy:String,anxiety:String)=action {
+        require(wellbeingSettings.value.enabled&&wellbeingSettings.value.checkIns){"Mood check-ins are turned off in Mental wellbeing settings."}
+        require(mood in listOf("VERY LOW","LOW","OKAY","GOOD","GREAT"))
+        val before=rightNowSummary(records.value,energyTimeSettings.value)
+        val raw=personal("WellbeingCheckIn",fields("mood" to p(mood),"energy" to p(energy),"anxiety" to p(anxiety),"date" to p(today()),"algorithmVersion" to p(uk.co.james.state.WELLBEING_ALGORITHM_VERSION),"liveEnergyBefore" to p(before.liveEnergy.score),"bodyBattery" to (before.bodyBattery?.let(::p)?:JsonNull),"mentalReserve" to p(before.mentalReserve),"sleepMinutes" to (records.value.filter {it.kind=="HealthMetric"&&it.data().text("metric")=="Sleep"}.maxByOrNull {it.timestamp}?.data()?.number("value")?.let(::p)?:JsonNull),"recovery" to (records.value.filter {it.kind=="HealthMetric"&&it.data().text("metric")=="Recovery"}.maxByOrNull {it.timestamp}?.data()?.number("value")?.let(::p)?:JsonNull),"awakeMinutes" to p(before.awakeMinutes),"context" to p(before.nextConstraint?.title?:"")))
+        repo.save("personalRecords",raw);message.value="Wellbeing check-in saved."
+    }
+    fun timePressureCheckIn(value:String)=action {
+        require(value in listOf("NOT AT ALL","A LITTLE","SOMEWHAT","A LOT","EXTREMELY"))
+        val before=rightNowSummary(records.value,energyTimeSettings.value)
+        val raw=personal("TimePressureCheckIn",fields("title" to p("Time pressure check-in"),"pressure" to p(value),"date" to p(today()),"predictionBefore" to p(before.timePressure.score),"nextConstraint" to p(before.nextConstraint?.title?:""),"usableMinutes" to (before.nextConstraint?.usableMinutes?.let(::p)?:JsonNull),"personalMinutes" to p(before.personalMinutes),"algorithmVersion" to p(uk.co.james.state.JamesAlgorithmRegistry.TIME_PRESSURE_VERSION),"calibrationVersion" to p("1.0.0")))
+        repo.save("personalRecords",raw);message.value="Time pressure check-in saved."
+    }
+    fun energyCheckIn(value:String)=action {
+        require(value in listOf("VERY LOW","LOW","OKAY","HIGH","VERY HIGH"))
+        val before=rightNowSummary(records.value,energyTimeSettings.value)
+        val nutrition=before.nutrition
+        val raw=personal("WellbeingCheckIn",fields("mood" to p(""),"energy" to p(value),"anxiety" to p(""),"date" to p(today()),"liveEnergyBefore" to p(before.liveEnergy.score),"bodyBattery" to (before.bodyBattery?.let(::p)?:JsonNull),"mentalReserve" to p(before.mentalReserve),"awakeMinutes" to p(before.awakeMinutes),"recentContext" to p(before.nextConstraint?.title?:""),"lastMealAt" to (nutrition.latestMealAt?.let(::p)?:JsonNull),"minutesSinceMeal" to (nutrition.minutesSinceMeal?.let(::p)?:JsonNull),"recentMealKcal" to (nutrition.recentEnergyKcal?.let(::p)?:JsonNull),"hydrationTodayMl" to (nutrition.hydrationMl?.let(::p)?:JsonNull),"lastHydrationAt" to (nutrition.latestHydrationAt?.let(::p)?:JsonNull),"caffeineTodayMg" to (nutrition.caffeineMg?.let(::p)?:JsonNull),"lastCaffeineAt" to (nutrition.latestCaffeineAt?.let(::p)?:JsonNull),"nutritionSource" to p(nutrition.source?:""),"jamesDayId" to p(before.jamesDay.id),"algorithmVersion" to p(uk.co.james.state.JamesAlgorithmRegistry.LIVE_ENERGY_VERSION),"calibrationVersion" to p("1.0.0")))
+        repo.save("personalRecords",raw);message.value="Energy check-in saved."
+    }
+
+    data class CalibrationTarget(val score:Int,val confidence:String,val jamesDayId:String?,val algorithmVersion:String,val calibrationVersion:String,val calibrationSetId:String="")
+    fun calibrationTarget(algorithmId:String):CalibrationTarget? {
+        val rows=records.value;val entry=JamesAlgorithmRegistry.get(algorithmId)?:return null
+        val right=if(algorithmId in setOf("live_energy","sleepiness","energy_sustainability","crash_risk","time_pressure"))rightNowSummary(rows,energyTimeSettings.value)else null
+        val target=when(algorithmId) {
+            "body_battery"->bodyBattery(rows).let {b->b.value?.let {CalibrationTarget(it,b.confidence,b.trace?.jamesDayId,b.algorithmVersion,b.calibrationVersion,b.calibrationSetId.orEmpty())}}
+            "live_energy"->right?.liveEnergy?.let {CalibrationTarget(it.score,it.confidence,right.jamesDay.id,it.algorithmVersion,it.calibrationVersion,it.calibrationSetId)}
+            "sleepiness"->right?.sleepiness?.let {CalibrationTarget(it.score,it.confidence,right.jamesDay.id,it.algorithmVersion,it.calibrationVersion,it.calibrationSetId)}
+            "energy_sustainability"->right?.sustainability?.let {CalibrationTarget(it.score,it.confidence,right.jamesDay.id,it.algorithmVersion,it.calibrationVersion,it.calibrationSetId)}
+            "crash_risk"->right?.crashRisk?.let {CalibrationTarget(it.score,it.confidence,right.jamesDay.id,it.algorithmVersion,it.calibrationVersion,it.calibrationSetId)}
+            "time_pressure"->right?.timePressure?.let {CalibrationTarget(it.score,it.confidence,right.jamesDay.id,it.algorithmVersion,it.calibrationVersion,it.calibrationSetId)}
+            "mental_reserve"->wellbeing.value.reserve.let {CalibrationTarget(it.score,it.confidence,null,entry.algorithmVersion,wellbeing.value.calibrationVersions["mental_reserve"]?:entry.calibrationVersion,wellbeing.value.calibrationSetIds["mental_reserve"].orEmpty())}
+            "anxiety_load"->wellbeing.value.anxiety.let {CalibrationTarget(it.score,it.confidence,null,entry.algorithmVersion,wellbeing.value.calibrationVersions["anxiety_load"]?:entry.calibrationVersion,wellbeing.value.calibrationSetIds["anxiety_load"].orEmpty())}
+            "low_mood_load"->wellbeing.value.lowMood.let {CalibrationTarget(it.score,it.confidence,null,entry.algorithmVersion,wellbeing.value.calibrationVersions["low_mood_load"]?:entry.calibrationVersion,wellbeing.value.calibrationSetIds["low_mood_load"].orEmpty())}
+            "context_load"->uk.co.james.state.currentContext(rows).let {val active=JamesCalibrationEngine.activeCalibration(rows,"context_load",entry.calibrationVersion,entry.algorithmVersion);CalibrationTarget(it.score,it.confidence,it.active?.jamesDayId,entry.algorithmVersion,active.version,active.setId)}
+            "life_balance"->uk.co.james.state.lifeBalance(rows).current.score?.let {val active=JamesCalibrationEngine.activeCalibration(rows,"life_balance",entry.calibrationVersion,entry.algorithmVersion);CalibrationTarget(it,"ROLLING",null,entry.algorithmVersion,active.version,active.setId)}
+            "james_stress"->rows.filter {it.kind=="HealthMetric"&&it.data().text("metric")=="James Stress"}.maxByOrNull {it.timestamp}?.let {val active=JamesCalibrationEngine.activeCalibration(rows,"james_stress",entry.calibrationVersion,entry.algorithmVersion);CalibrationTarget(JamesCalibrationEngine.applyActiveScore(it.data().number("value").toInt().coerceIn(0,100),rows,"james_stress"),"SOURCE",it.data().text("jamesDayId").ifBlank {null},entry.algorithmVersion,active.version,active.setId)}
+            else->null
+        }?:return null
+        return target
+    }
+    fun calibrationOptions(algorithmId:String)=when(algorithmId) {
+        "body_battery"->listOf("MUCH TOO HIGH","A LITTLE TOO HIGH","ABOUT RIGHT","A LITTLE TOO LOW","MUCH TOO LOW")
+        "mental_reserve"->listOf("BRAIN GONE","MENTALLY TIRED","ABOUT RIGHT","MORE CAPACITY THAN THIS")
+        "live_energy"->listOf("NO ENERGY","LOW","ABOUT RIGHT","BUZZING")
+        "sleepiness"->listOf("PREDICTION TOO HIGH","ABOUT RIGHT","PREDICTION TOO LOW")
+        "anxiety_load","james_stress"->listOf("NONE","LOW","MODERATE","HIGH")
+        "time_pressure"->listOf("NOT AT ALL","A LITTLE","SOMEWHAT","A LOT","EXTREMELY")
+        "context_load"->listOf("NOT AT ALL","A LITTLE","MODERATE","A LOT","EXTREME")
+        "life_balance"->listOf("DEFINITELY NOT","MOSTLY NOT","MIXED","MOSTLY YES","DEFINITELY YES")
+        "low_mood_load"->listOf("VERY LOW","LOW","OKAY","GOOD","VERY GOOD")
+        else->listOf("TOO HIGH","ABOUT RIGHT","TOO LOW")
+    }
+    fun calibrate(algorithmId:String,target:CalibrationTarget,submissionId:String,feedback:String,note:String="",capacity:String?=null,sleepiness:String?=null)=action {
+        if(algorithmId in setOf("low_mood_load","life_balance")) {
+            val last=records.value.filter {it.kind=="CalibrationEvent"&&it.data().text("algorithmId")==algorithmId&&!it.data().flag("ignored")}.maxByOrNull {it.timestamp}
+            require(last?.timestamp?.let {runCatching {java.time.Duration.between(java.time.Instant.parse(it),java.time.Instant.now()).toDays()>=6}.getOrDefault(true)}!=false){"Longitudinal calibration is weekly; a recent observation already covers this period."}
+        }
+        val structured=when(algorithmId) {"sleepiness"->sleepiness?.takeIf {it.isNotBlank()}?:feedback;else->capacity?.takeIf {it.isNotBlank()}?:feedback}
+        var snapshot=withContext(Dispatchers.Default){calibrationSnapshot(records.value,target.score,target.confidence,target.jamesDayId)}
+        snapshot=snapshot.changed("comparisonFeedback" to p(feedback),"primaryTarget" to p(JamesCalibrationCatalog.get(algorithmId)?.feedbackDimension?:""),"capacity" to (capacity?.let(::p)?:JsonNull),"sleepiness" to (sleepiness?.let(::p)?:JsonNull),"evidenceConfidence" to p("DIRECT_HIGH"))
+        if(algorithmId in setOf("low_mood_load","life_balance"))snapshot=snapshot.changed("feedbackWindowStart" to p(java.time.Instant.now().minus(java.time.Duration.ofDays(if(algorithmId=="life_balance")14 else 7)).toString()),"feedbackWindowEnd" to p(now()),"temporalAlignment" to p("LONGITUDINAL_RETROSPECTIVE"))
+        val raw=JamesCalibrationEngine.event(algorithmId,target.score.toDouble(),structured,target.algorithmVersion,target.calibrationVersion,target.jamesDayId,snapshot,note=note,calibrationSetId=target.calibrationSetId,recordId="calibration-event:"+submissionId)
+        repo.saveCalibrationEvent(raw)
+        val count=records.value.count {it.kind=="CalibrationEvent"&&it.data().text("algorithmId")==algorithmId}+1
+        message.value="Calibration saved. Observation #$count — James OS will compare it with similar observations."
+    }
+    fun analyseCalibration(algorithmId:String)=action {
+        repo.recordCalibrationAnalysis(algorithmId,"ANALYSING")
+        try {
+            val entry=JamesAlgorithmRegistry.get(algorithmId)?:error("Algorithm unavailable.")
+            val events=withContext(Dispatchers.Default){records.value.mapNotNull(JamesCalibrationEngine::parse).filter {it.algorithmId==algorithmId}}
+            val active=JamesCalibrationEngine.activeCalibration(records.value,algorithmId,entry.calibrationVersion,entry.algorithmVersion)
+            val dependencies=JamesCalibrationEngine.dependencyVersions(records.value,algorithmId)
+            val candidate=withContext(Dispatchers.Default){JamesCalibrationEngine.candidate(events,algorithmId,active.version,active.parameters,baseCalibrationSetId=active.setId,dependencyVersions=dependencies)}
+            if(candidate==null) {repo.recordCalibrationAnalysis(algorithmId,"COMPLETE","More varied evidence is required.");message.value="More varied calibration evidence is needed before a safe candidate can be generated.";return@action}
+            val result=withContext(Dispatchers.Default){JamesCalibrationEngine.backTest(events,candidate)}
+            val tested=if(result.robustValidation&&result.regressions.isEmpty()&&(result.improvementPercent?:0.0)>0)CandidateStatus.TESTED else CandidateStatus.DRAFT
+            repo.saveAnalysedCandidate(candidate,result,tested);repo.recordCalibrationAnalysis(algorithmId,"COMPLETE",if(tested==CandidateStatus.TESTED)"Tested candidate available." else "Validation limited or regression detected.")
+            message.value=if(tested==CandidateStatus.TESTED)"Tested candidate available for review."else"Analysis complete. Candidate remains draft because validation is limited or a regression was found."
+        } catch(e:CancellationException) {repo.recordCalibrationAnalysis(algorithmId,"FAILED","Analysis cancelled safely.");throw e
+        } catch(e:Exception) {repo.recordCalibrationAnalysis(algorithmId,"FAILED",e.message?:"Analysis failed safely.");throw e}
+    }
+    fun activateCalibration(candidateId:String)=action {
+        val newVersion=repo.activateCalibrationCandidate(candidateId);message.value="Calibration $newVersion activated. Future scores use it; history is unchanged."
+    }
+    fun rollbackCalibration(algorithmId:String)=action {
+        repo.rollbackCalibration(algorithmId);message.value="Previous calibration restored. Observations and history were preserved."
+    }
+
+    fun editCalibration(recordId:String,feedback:String,note:String)=action {
+        val row=records.value.firstOrNull {it.kind=="CalibrationEvent"&&it.recordId==recordId}?:error("Observation unavailable.")
+        val d=row.data();val prediction=d.number("prediction")
+        val observed=JamesCalibrationEngine.normalizeObserved(d.text("algorithmId"),feedback,prediction)?:error("Unsupported calibration response.")
+        val error=prediction-observed
+        val direction=when {error>2->ErrorDirection.OVERESTIMATED;error < -2->ErrorDirection.UNDERESTIMATED;else->ErrorDirection.MATCHED}
+        val changed=d.changed("feedback" to p(feedback),"observed" to p(observed),"error" to p(error),"absoluteError" to p(kotlin.math.abs(error)),"direction" to p(direction.name),"note" to p(note.take(240)),"editedAt" to p(now()))
+        repo.mutateCalibrationEvidence(row.raw().changed("data" to changed,"updatedAt" to p(now())),algorithmId=d.text("algorithmId"));message.value="Calibration feedback updated. Existing candidates were invalidated; source data was not changed."
+    }
+    fun restoreDefaultCalibration(algorithmId:String)=action {
+        repo.restoreDefaultCalibration(algorithmId);message.value="Default calibration restored. Feedback and history remain available."
+    }
+
+    fun ignoreCalibration(recordId:String,ignored:Boolean)=action {
+        val row=records.value.firstOrNull {it.kind=="CalibrationEvent"&&it.recordId==recordId}?:return@action
+        repo.mutateCalibrationEvidence(row.raw().changed("data" to row.data().changed("ignored" to p(ignored)),"updatedAt" to p(now())),algorithmId=row.data().text("algorithmId"));message.value=if(ignored)"Observation excluded and existing candidates invalidated."else"Observation included again; run analysis for a fresh candidate."
+    }
+    fun deleteCalibration(recordId:String)=action {val row=records.value.firstOrNull {it.kind=="CalibrationEvent"&&it.recordId==recordId}?:return@action;repo.mutateCalibrationEvidence(null,recordId,row.data().text("algorithmId"));message.value="Calibration observation deleted and candidates invalidated. Underlying source data was not changed."}
+
+    fun openStateCheckIn() {
+        this.open("MoodEntry")
+        val raw=json.parseToJsonElement(draft.value).jsonObject
+        val snapshot=uk.co.james.state.stateSummary(records.value).snapshot()
+        saved["draft"]=raw.changed("metadata" to fields("stateAtCheckIn" to snapshot)).toString()
+    }
+    fun change(key: String,value: JsonElement,top: Boolean=false) {val raw=json.parseToJsonElement(draft.value).jsonObject;if(dialog.value=="WeekReflection"){saved["draft"]=raw.changed("value" to raw.obj("value").changed(key to value,"updatedAt" to p(now()))).toString();return};saved["draft"]=if(top)raw.changed(key to value).toString() else raw.changed("data" to raw.obj("data").changed(key to value)).toString()}
+    fun saveDraft() = action {
+        var raw=json.parseToJsonElement(draft.value).jsonObject
+        if(dialog.value in listOf("Template","RutEvent")) {
+            raw=raw.changed("points" to p(raw.text("points").toLongOrNull()?:error("Enter whole signed points.")))
+            if(dialog.value=="Template" && raw.text("recoveryTitle").isNotBlank()) raw=raw.changed("recoveryPoints" to p(raw.text("recoveryPoints").toLongOrNull()?:error("Enter recovery points.")))
+        }
+        if(dialog.value !in listOf("Template"))raw=raw.changed("updatedAt" to p(now()))
+        if(dialog.value=="Routine")require(raw.obj("data").text("title").isNotBlank()){"Give the routine a name."}
+        if(dialog.value=="MoodEntry")require(uk.co.james.state.stateChoices.any {(key,choices)->raw.obj("data").text(key) in choices}) {"Choose at least one signal. Leave the others blank."}
+        if(dialog.value=="Event")require(raw.obj("data").text("title").isNotBlank()) {"Describe the moment."}
+        repo.save(saved.get<String>("editor-store")?:"personalRecords",raw,saved.get<String>("editor-original")?.ifBlank {null});close();message.value="Saved."
+    }
+    fun chooseImport(uri: Uri)=action {val path=repo.stage(uri);saved["staged-import"]=path;preview(path);navigate("Import Centre")}
+    private suspend fun preview(path: String) {val (p,fingerprint)=repo.loadPlan(path);plan.value=p;merge.value=BackupCodec.merge(p,repo.dao.all());saved["import-fingerprint"]=fingerprint}
+    fun refreshPreview()=action {saved.get<String>("staged-import")?.let {preview(it)}}
+    fun cancelImport(){saved.get<String>("staged-import")?.let(repo::releaseStaged);plan.value=null;merge.value=null;saved.remove<String>("staged-import");saved.remove<String>("import-fingerprint")}
+    fun import()=action {val p=plan.value?:error("Choose a backup first.");val staged=saved.get<String>("staged-import");val result=repo.import(p,saved["import-fingerprint"]?:"");
+        repo.dao.get("settings","theme")?.raw()?.text("value")?.takeIf {it in listOf("light","dark","system")}?.let {app.preferences.theme(it)}
+        if(staged!=null)repo.discardStaged(staged);cancelImport();message.value="Imported ${result.additions.size} records. ${result.duplicates} duplicates ignored; ${result.conflicts.size} conflicts kept unchanged."
+    }
+    fun export(uri: Uri)=action {val archive=saved.get<String>("export-archive");if(archive.isNullOrBlank())repo.exportTo(uri) else repo.exportArchive(uri,archive);saved.remove<String>("export-archive");message.value="Backup exported."}
+    fun prepareExport(archiveId: String?=null){saved["export-archive"]=archiveId?:""}
+    fun start(points: Long)=action {repo.start(points);repo.seedDefaults()}
+    fun log(template: StoredRecord,pull: StoredRecord?=null)=action {repo.log(template.raw(),date.value,linked=pull?.raw())}
+    fun markDay(status: String)=action {repo.markDay(date.value,status);message.value="Day marked $status."}
+    fun setAside(pull: StoredRecord,closed: Boolean)=action {val key="closed-pull:${pull.recordId}";val old=repo.dao.get("metadata",key);if(closed)repo.save("metadata",fields("key" to p(key),"value" to fields("closedAt" to p(now()))),old?.rawJson) else repo.dao.delete("metadata",key)}
+    fun pin(template: StoredRecord)=action {val old=repo.dao.get("settings","favourites")?.raw()?.array("value")?.mapNotNull {(it as? JsonPrimitive)?.content}?.toMutableList()?: mutableListOf();if(template.recordId in old)old.remove(template.recordId)else {require(old.size<12){"You can pin up to 12 events."};old.add(template.recordId)};repo.setting("favourites",JsonArray(old.map {p(it)}))}
+    fun theme(value: String)=action {app.preferences.theme(value);repo.setting("theme",p(value))}
+    fun refreshPermissions(){viewModelScope.launch {health.value=runCatching {app.health.status()}.getOrElse {HealthStatus(false,emptySet(),it.message?:"Unavailable")}}}
+    fun onAppResumed(){refreshPermissions();whoopSyncOnForeground()}
+    private fun whoopSyncOnForeground() {
+        if(!app.whoop.configured())return
+        val source=records.value.firstOrNull {it.recordId=="source:whoop"}?.data()
+        val lastValue=source?.text("lastSuccess").takeIf { !it.isNullOrBlank() }?:source?.text("lastSync").orEmpty()
+        val last=lastValue.takeIf {it.isNotBlank()}?.let {runCatching {java.time.Instant.parse(it)}.getOrNull()}
+        val ownershipMigrationNeeded=records.value.any {row->
+            row.kind=="HealthMetric"&&row.source=="whoop"&&row.data().text("metric")=="Strain"&&
+                row.data().text("whoopCycleId").isBlank()&&row.data().text("recordStart").isBlank()
+        }
+        if(ownershipMigrationNeeded||last==null||java.time.Duration.between(last,java.time.Instant.now())>=java.time.Duration.ofMinutes(30))viewModelScope.launch {runCatching {app.whoop.sync()}}
+    }
+    val whoopConfigured=MutableStateFlow(app.whoop.configured())
+    fun whoopConnect()=action {
+        val url=app.whoop.connectUrl();whoopConfigured.value=true
+        app.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,Uri.parse(url)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+    fun whoopSync()=action {val result=app.whoop.sync();message.value=result.summary;uk.co.james.sync.BackgroundJobs.scheduleWhoop(app)}
+    fun whoopSyncQuietly() {
+        if(!app.whoop.configured())return
+        val now=System.currentTimeMillis()
+        val sleepPriority=runCatching {bodyBattery(records.value).sleepProcessing}.getOrDefault(false)
+        val minimum=if(sleepPriority)10*60*1000L else 30*60*1000L
+        if(now-lastQuietWhoopSync<minimum)return
+        lastQuietWhoopSync=now
+        viewModelScope.launch {try {app.whoop.sync()}catch(_:Exception){}}
+    }
+    fun whoopDisconnect()=action {app.whoop.disconnect();whoopConfigured.value=false;uk.co.james.sync.BackgroundJobs.stopWhoop(app);message.value="WHOOP disconnected. Imported history is kept."}
+    fun requestWearStressCheck()=action {
+        if(app.wear.stressCheck.value.active) {
+            message.value="Sensor check already in progress."
+            return@action
+        }
+        val previousStress=records.value.filter {it.kind=="HealthMetric"&&it.data().text("metric")=="James Stress"}
+            .maxByOrNull {it.updatedAt.ifBlank {it.timestamp}}?.data()?.number("value")
+        val started=app.wear.requestStressCheck(previousStress,wellbeing.value.anxiety.score)
+        message.value=if(started) "Request sent to your watch. Keep it snug and still for about 45 seconds." else "Your watch is not connected. Reconnect it and try again."
+    }
+    fun wearSensors(v:uk.co.james.settings.WearSensorSettings)=action {app.preferences.wearSensors(v);if(!app.wear.sendSensorSettings(v))message.value="Watch settings saved here; connect your watch to apply them."}
+    fun reconcileShiftTracker()=action {message.value=if(app.work.requestReconciliation())"Shift Tracker reconciliation requested." else "Shift Tracker sender is waiting for Part 2."}
+    fun healthSync()=action {app.health.sync();val nutrition=app.nutrition.sync();refreshPermissions();message.value="Health data synced. Nutrition: ${nutrition.nutritionReturned} food records returned; ${nutrition.recordsPersisted} records saved."}
+    fun healthSyncQuietly() {
+        val now=System.currentTimeMillis()
+        if(now-lastQuietHealthSync<4*60*1000L)return
+        lastQuietHealthSync=now
+        viewModelScope.launch {try {app.health.sync();app.nutrition.sync();refreshPermissions()}catch(_:Exception){}}
+    }
+    fun healthDisconnect()=action {app.health.disconnect();refreshPermissions();message.value="Health access revoked. Imported history remains on this device."}
+    fun updateCheck()=action {
+        update.value=null;downloaded.value=null
+        updateProgress.value="Checking…"
+        try {update.value=updater.check();updateProgress.value=if(update.value==null)"James OS is up to date." else "Update available: ${update.value!!.name}"} catch(e:CancellationException){updateProgress.value="Check cancelled.";throw e} catch(e:Exception){updateProgress.value=e.message?:"Could not check for updates. Try again."}
+    }
+    fun downloadUpdate()=action {
+        downloaded.value=null
+        try {downloaded.value=updater.download(update.value?:error("Check for updates first.")){updateProgress.value="Downloading $it%"};updateProgress.value="Verified. Ready to install."} catch(e:CancellationException){updateProgress.value="Download cancelled.";throw e} catch(e:Exception){updateProgress.value=e.message?:"Download failed. Try again."}
+    }
+    fun installIntent()=updater.installIntent(downloaded.value?:error("Download the update first."))
+    fun wearSync()=action {app.wear.publish(records.value);message.value="Watch snapshot sent."}
+    fun wearCheckUpdate()=action {wearRelease=wearUpdater.check();if(wearRelease==null)message.value="Watch is up to date." else app.wear.transfer.value="Watch update available: ${wearRelease!!.version}"}
+    fun wearDownloadAndSend()=action {val release=wearRelease?:wearUpdater.check()?:error("Watch is up to date.");wearRelease=release;val cached=wearApk?.takeIf {it.isFile};wearApk=cached?:wearUpdater.download(release){app.wear.transfer.value="Downloading $it%"};app.wear.transfer.value="Verified. Preparing watch";wearUpdater.send(release,wearApk!!){app.wear.transfer.value="Sending $it%"}}
+    fun wearOpenReadyUpdate()=action {val node=app.wear.refreshConnection().nodeId.ifBlank {error("No connected watch.")};com.google.android.gms.wearable.Wearable.getMessageClient(app).sendMessage(node,"/james/v1/update/open-ready",ByteArray(0)).await();message.value="Opening the saved watch update."}
+    fun wearOpenSettings()=action {val node=app.wear.refreshConnection().nodeId.ifBlank {error("No connected watch.")};com.google.android.gms.wearable.Wearable.getMessageClient(app).sendMessage(node,"/james/v1/open/settings",ByteArray(0)).await();message.value="Opening James OS on the watch."}
+}
