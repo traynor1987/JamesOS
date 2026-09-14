@@ -65,9 +65,11 @@ jobs:
           set -euo pipefail
           test -n "$SIGNING_PASSWORD"
           test -s "$JAMES_KEYSTORE_PATH"
-          actual=$(keytool -exportcert -keystore "$JAMES_KEYSTORE_PATH" -alias james -storepass:env SIGNING_PASSWORD | sha256sum | cut -d ' ' -f 1)
+          keytool -exportcert -keystore "$JAMES_KEYSTORE_PATH" -alias james -storepass:env SIGNING_PASSWORD > "$RUNNER_TEMP/james-certificate.der"
+          actual=$(sha256sum "$RUNNER_TEMP/james-certificate.der" | cut -d ' ' -f 1)
           expected=$(tr -d '\r\n' < signing/certificate.sha256)
           test "$actual" = "$expected"
+          rm -f "$RUNNER_TEMP/james-certificate.der"
       - name: Full validation and signed builds
         env:
           JAMES_KEYSTORE_PASSWORD: ${{ secrets.JAMES_SIGNING_PASSWORD }}
