@@ -17,8 +17,11 @@ assert 'include(":app", ":wear")' in settings
 assert 'legacy-web' not in (root/'app/build.gradle.kts').read_text()
 validation=(root/'.github/workflows/android.yml').read_text()
 release=(root/'.github/workflows/release.yml').read_text()
-for required in [':app:testDebugUnitTest',':wear:testDebugUnitTest',':app:assembleRelease',':wear:assembleRelease',':app:connectedDebugAndroidTest']:
+for required in [':app:testDebugUnitTest',':app:assembleRelease',':app:connectedDebugAndroidTest']:
     assert required in validation, required
+# Public/fork validation must not receive Samsung's proprietary standalone AAR.
+for forbidden in [':wear:testDebugUnitTest', ':wear:assembleRelease']:
+    assert forbidden not in validation, forbidden
 for required in ['james-wear.apk.sha256','gh release create','environment: james-release']:
     assert required in release, required
 assert 'gh release create' not in validation
