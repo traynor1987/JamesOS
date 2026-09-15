@@ -1,0 +1,8 @@
+<!-- Canonical James OS Focus mark.  Traced from the approved artwork: a broken
+     outer ring, one straight stem and one circular terminal.  Do not add a
+     lower-right hook, tail or typographic-J curve. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108">
+  <path fill="none" stroke="#B7F663" stroke-width="8" stroke-linecap="round" d="M46 19A36 36 0 1 0 66 19"/>
+  <path fill="none" stroke="#C9FF59" stroke-width="9" stroke-linecap="round" d="M54 27V66"/>
+  <circle cx="41" cy="77" r="10" fill="#C9FF59"/>
+</svg>

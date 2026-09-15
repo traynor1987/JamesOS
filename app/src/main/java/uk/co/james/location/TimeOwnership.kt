@@ -9,6 +9,34 @@ import uk.co.james.database.StoredRecord
 /** One canonical answer to "whose time was this?". Context, place and activity
  * are deliberately not converted into ownership. */
 internal data class OwnershipInterval(val start:Instant,val end:Instant,val ownership:TimeOwnership,val interruption:Boolean=false,val provenance:String="UNKNOWN")
+/** A pure description of the one authoritative ownership-clock change.  The
+ * repository applies the close(s) and successor in one Room transaction so a
+ * transition never exposes overlapping ownership to Today or Life Balance. */
+internal data class OwnershipTransition(
+    val closeIds:List<String>,
+    val successor:TimeOwnership,
+    val recordsInterruption:Boolean=false
+)
+
+/** Deliberately ending a period does not invent an obligation.  It starts an
+ * explicit UNKNOWN segment so subsequent time is honest rather than silently
+ * extending the prior subjective classification. */
+internal fun endOwnership(openId:String,current:TimeOwnership):OwnershipTransition {
+    require(openId.isNotBlank())
+    return OwnershipTransition(listOf(openId),TimeOwnership.UNKNOWN)
+}
+
+/** Selecting another ownership is a boundary at one instant: old closes and
+ * new begins there. */
+internal fun changeOwnership(openIds:List<String>,successor:TimeOwnership):OwnershipTransition =
+    OwnershipTransition(openIds.distinct(),successor)
+
+/** Interrupting Personal is intentionally different from ending it.  The
+ * interruption record/resumption link is retained by the caller. */
+internal fun interruptOwnership(openId:String,current:TimeOwnership):OwnershipTransition {
+    require(current==TimeOwnership.AUTONOMOUS) { "Only Personal time can be interrupted." }
+    return OwnershipTransition(listOf(openId),TimeOwnership.COMMITTED,recordsInterruption=true)
+}
 internal data class OwnershipSummary(val autonomousMinutes:Long,val committedMinutes:Long,val constrainedMinutes:Long,val workMinutes:Long,val unknownMinutes:Long,val interruptions:Int,val interruptionMinutes:Long,val longestAutonomousBlockMinutes:Long) {
     val classifiedMinutes get()=autonomousMinutes+committedMinutes+constrainedMinutes+workMinutes
 }

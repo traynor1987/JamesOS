@@ -1,7 +1,6 @@
-<!-- Production vector derived from branding/focus-mark.svg.  It is the single
-     phone master used by the header, adaptive foreground, themed icon,
-     notification and splash. -->
-<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+<!-- Same canonical 108-unit Focus geometry as branding/focus-mark.svg.  The
+     Wear drawable scales it; do not independently redraw this mark. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="48dp" android:height="48dp" android:viewportWidth="108" android:viewportHeight="108">
     <path android:fillColor="@android:color/transparent" android:strokeColor="#B7F663" android:strokeWidth="8" android:strokeLineCap="round" android:pathData="M46,19A36,36 0,1 0,66,19"/>
     <path android:fillColor="@android:color/transparent" android:strokeColor="#C9FF59" android:strokeWidth="9" android:strokeLineCap="round" android:pathData="M54,27L54,66"/>
     <path android:fillColor="#C9FF59" android:pathData="M41,67A10,10 0,1 0,41.1,67"/>

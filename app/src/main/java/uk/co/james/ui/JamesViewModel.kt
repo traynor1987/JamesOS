@@ -189,11 +189,34 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
     /** Subjective ownership is its own period record. It can live inside one
      * physical Visit without forcing fake location splits. */
     fun setCurrentOwnership(ownership:String)=action {
-        require(ownership in uk.co.james.location.TimeOwnership.entries.map {it.name})
+        val selected=runCatching {uk.co.james.location.TimeOwnership.valueOf(ownership)}.getOrElse {error("Unknown time ownership.")}
         val stamp=now(); val anchor=records.value.firstOrNull {it.kind=="LocationAnchor"}
-        records.value.filter {it.kind=="OwnershipPeriod"&&it.data().text("end").isBlank()}.forEach {open->repo.save(open.store,open.raw().changed("data" to open.data().changed("end" to p(stamp)),"updatedAt" to p(stamp)),open.rawJson)}
-        repo.save("personalRecords",personal("OwnershipPeriod",fields("start" to p(stamp),"end" to p(""),"ownership" to p(ownership),"ownershipSource" to p("JAMES_CONFIRMED"),"visitId" to p(""),"anchorId" to p(anchor?.recordId?:""),"context" to p("UNKNOWN"),"provenance" to p("James confirmed current time ownership.")),source="manual",timestamp=stamp))
-        message.value="${ownership.lowercase().replaceFirstChar {it.uppercase()}} time recorded from now."
+        val open=records.value.filter {it.kind=="OwnershipPeriod"&&it.data().text("end").isBlank()}
+        uk.co.james.location.changeOwnership(open.map {it.recordId},selected)
+        repo.transitionOwnership(open,ownershipPeriod(selected,stamp,anchor?.recordId.orEmpty(),"James confirmed current time ownership."))
+        message.value="${ownershipLabel(selected)} time recorded from now."
+    }
+    /** Closing is a first-class action.  The next period is explicitly Unknown,
+     * never a fabricated obligation and never a silently running Personal timer. */
+    fun endCurrentOwnership()=action {
+        val open=records.value.filter {it.kind=="OwnershipPeriod"&&it.data().text("end").isBlank()}
+        val active=open.maxByOrNull {it.timestamp}?:run {message.value="No active time ownership to end.";return@action}
+        val current=runCatching {uk.co.james.location.TimeOwnership.valueOf(active.data().text("ownership","UNKNOWN"))}.getOrDefault(uk.co.james.location.TimeOwnership.UNKNOWN)
+        val stamp=now(); val anchor=records.value.firstOrNull {it.kind=="LocationAnchor"}
+        uk.co.james.location.endOwnership(active.recordId,current)
+        repo.transitionOwnership(open,ownershipPeriod(uk.co.james.location.TimeOwnership.UNKNOWN,stamp,anchor?.recordId.orEmpty(),"James ended ${ownershipLabel(current)} time; subsequent ownership is unknown."))
+        message.value="${ownershipLabel(current)} time ended. Ownership is unknown from now."
+    }
+    private fun ownershipPeriod(ownership:uk.co.james.location.TimeOwnership,stamp:String,anchorId:String,provenance:String)=personal("OwnershipPeriod",fields(
+        "start" to p(stamp),"end" to p(""),"ownership" to p(ownership.name),"ownershipSource" to p("JAMES_CONFIRMED"),
+        "visitId" to p(""),"anchorId" to p(anchorId),"context" to p("UNKNOWN"),"provenance" to p(provenance)
+    ),source="manual",timestamp=stamp)
+    private fun ownershipLabel(ownership:uk.co.james.location.TimeOwnership)=when(ownership) {
+        uk.co.james.location.TimeOwnership.AUTONOMOUS->"Personal"
+        uk.co.james.location.TimeOwnership.COMMITTED->"Obligation"
+        uk.co.james.location.TimeOwnership.CONSTRAINED->"Constrained"
+        uk.co.james.location.TimeOwnership.WORK->"Work"
+        uk.co.james.location.TimeOwnership.UNKNOWN->"Unknown"
     }
     /** An interruption is preserved separately from ownership. Starting one
      * closes the current personal segment and opens a committed segment so the
@@ -203,18 +226,18 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
         val open=records.value.filter {it.kind=="OwnershipPeriod"&&it.data().text("end").isBlank()}.maxByOrNull {it.timestamp}
         if(open?.data()?.text("ownership")!="AUTONOMOUS") { message.value="Set Personal time before recording an interruption."; return@action }
         val stamp=now(); val anchor=records.value.firstOrNull {it.kind=="LocationAnchor"}
-        repo.save(open.store,open.raw().changed("data" to open.data().changed("end" to p(stamp)),"updatedAt" to p(stamp)),open.rawJson)
         val interruption=personal("VisitInterruption",fields("visitId" to p(""),"anchorId" to p(anchor?.recordId?:""),"interruptedOwnershipPeriodId" to p(open.recordId),"reason" to p(reason),"start" to p(stamp),"end" to p(""),"source" to p("JAMES_CORRECTION"),"provenance" to p("James confirmed interruption.")),source="manual",timestamp=stamp)
-        repo.save("personalRecords",interruption)
-        repo.save("personalRecords",personal("OwnershipPeriod",fields("start" to p(stamp),"end" to p(""),"ownership" to p("COMMITTED"),"ownershipSource" to p("JAMES_CONFIRMED"),"interruptionId" to p(interruption.text("id")),"visitId" to p(""),"anchorId" to p(anchor?.recordId?:""),"provenance" to p("Interruption is active.")),source="manual",timestamp=stamp))
+        val committed=personal("OwnershipPeriod",fields("start" to p(stamp),"end" to p(""),"ownership" to p("COMMITTED"),"ownershipSource" to p("JAMES_CONFIRMED"),"interruptionId" to p(interruption.text("id")),"visitId" to p(""),"anchorId" to p(anchor?.recordId?:""),"provenance" to p("Interruption is active.")),source="manual",timestamp=stamp)
+        repo.transitionOwnership(listOf(open),committed,listOf("personalRecords" to interruption))
         message.value="Interruption recorded."
     }
     fun resumeCurrentTime()=action {
         val interruption=records.value.filter {it.kind=="VisitInterruption"&&it.data().text("end").isBlank()}.maxByOrNull {it.timestamp}?:run {message.value="No active interruption.";return@action}
         val stamp=now(); val anchor=records.value.firstOrNull {it.kind=="LocationAnchor"}
-        repo.save(interruption.store,interruption.raw().changed("data" to interruption.data().changed("end" to p(stamp)),"updatedAt" to p(stamp)),interruption.rawJson)
-        records.value.filter {it.kind=="OwnershipPeriod"&&it.data().text("end").isBlank()}.forEach {open->repo.save(open.store,open.raw().changed("data" to open.data().changed("end" to p(stamp)),"updatedAt" to p(stamp)),open.rawJson)}
-        repo.save("personalRecords",personal("OwnershipPeriod",fields("start" to p(stamp),"end" to p(""),"ownership" to p("AUTONOMOUS"),"ownershipSource" to p("JAMES_CONFIRMED"),"resumesInterruptionId" to p(interruption.recordId),"visitId" to p(""),"anchorId" to p(anchor?.recordId?:""),"provenance" to p("James resumed personal time.")),source="manual",timestamp=stamp))
+        val closes=records.value.filter {it.kind=="OwnershipPeriod"&&it.data().text("end").isBlank()}
+        val resumed=personal("OwnershipPeriod",fields("start" to p(stamp),"end" to p(""),"ownership" to p("AUTONOMOUS"),"ownershipSource" to p("JAMES_CONFIRMED"),"resumesInterruptionId" to p(interruption.recordId),"visitId" to p(""),"anchorId" to p(anchor?.recordId?:""),"provenance" to p("James resumed personal time.")),source="manual",timestamp=stamp)
+        val closedInterruption=interruption.raw().changed("data" to interruption.data().changed("end" to p(stamp)),"updatedAt" to p(stamp))
+        repo.transitionOwnership(closes,resumed,listOf(interruption.store to closedInterruption))
         message.value="Personal time resumed."
     }
     fun addVisitInterruption(visitId:String,reason:String)=action {

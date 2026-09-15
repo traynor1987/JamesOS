@@ -49,4 +49,38 @@ class TimeOwnershipTest {
         assertEquals(13,summary.interruptionMinutes)
         assertEquals(29,summary.longestAutonomousBlockMinutes)
     }
+    @Test fun ending_personal_closes_it_and_starts_explicit_unknown_without_extending_personal() {
+        val t0=instant("2026-09-10T17:32:00Z")
+        val t1=instant("2026-09-10T19:47:00Z")
+        val later=instant("2026-09-10T20:47:00Z")
+        val transition=endOwnership("personal",TimeOwnership.AUTONOMOUS)
+        assertEquals(listOf("personal"),transition.closeIds)
+        assertEquals(TimeOwnership.UNKNOWN,transition.successor)
+        val activeRow=row("OwnershipPeriod","personal",fields("ownership" to p("AUTONOMOUS"),"start" to p(t0.toString()),"end" to p("")))
+        assertEquals(135,ownershipSummary(ownershipIntervals(listOf(activeRow),t0,t1)).autonomousMinutes)
+        val rows=listOf(
+            row("OwnershipPeriod","personal",fields("ownership" to p("AUTONOMOUS"),"start" to p(t0.toString()),"end" to p(t1.toString()))),
+            row("OwnershipPeriod","unknown",fields("ownership" to p("UNKNOWN"),"start" to p(t1.toString()),"end" to p("")))
+        )
+        val summary=ownershipSummary(ownershipIntervals(rows,t0,later))
+        assertEquals(135,summary.autonomousMinutes)
+        assertEquals(60,summary.unknownMinutes)
+    }
+    @Test fun changing_personal_to_constrained_is_atomic_and_has_no_ownership_overlap() {
+        val transition=changeOwnership(listOf("personal"),TimeOwnership.CONSTRAINED)
+        assertEquals(listOf("personal"),transition.closeIds)
+        assertEquals(TimeOwnership.CONSTRAINED,transition.successor)
+    }
+    @Test fun interruption_is_not_a_deliberate_end() {
+        val end=endOwnership("personal",TimeOwnership.AUTONOMOUS)
+        val interrupted=interruptOwnership("personal",TimeOwnership.AUTONOMOUS)
+        assertEquals(TimeOwnership.UNKNOWN,end.successor)
+        assertEquals(TimeOwnership.COMMITTED,interrupted.successor)
+        assertTrue(interrupted.recordsInterruption)
+        assertFalse(end.recordsInterruption)
+    }
+
+    private fun row(kind:String,id:String,data:kotlinx.serialization.json.JsonObject)=StoredRecord.from(
+        "personalRecords",personal(kind,data,id,"manual",data.text("start","2026-09-10T00:00:00Z"))
+    )
 }

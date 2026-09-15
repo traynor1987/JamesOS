@@ -125,6 +125,29 @@ class JamesRepository(val context: Context, val db: JamesDatabase) {
         }
         dao.put(StoredRecord.from(store,raw))
     }
+    /** Owns one subjective-clock boundary.  Closing the prior segment and
+     * opening its successor must commit together: otherwise route observers
+     * could briefly calculate overlapping Personal/Constrained time. */
+    suspend fun transitionOwnership(openPeriods:Collection<StoredRecord>,successor:JsonObject,relatedRecords:Collection<Pair<String,JsonObject>> = emptyList()) = db.withTransaction {
+        val stamp=successor.obj("data").text("start")
+        require(validTime(stamp)) { "Ownership transition needs a valid start time." }
+        openPeriods.distinctBy {it.store to it.recordId}.forEach { expected->
+            val current=dao.get(expected.store,expected.recordId)?:return@forEach
+            if(current.kind=="OwnershipPeriod"&&current.data().text("end").isBlank()) {
+                val closed=current.raw().changed(
+                    "data" to current.data().changed("end" to p(stamp)),
+                    "updatedAt" to p(stamp)
+                )
+                dao.put(StoredRecord.from(current.store,closed))
+            }
+        }
+        relatedRecords.forEach {(store,raw)->
+            BackupCodec.validateRow(store,raw)
+            dao.put(StoredRecord.from(store,raw))
+        }
+        BackupCodec.validateRow("personalRecords",successor)
+        dao.put(StoredRecord.from("personalRecords",successor))
+    }
     suspend fun calibrationDataset(algorithmId:String,from:Instant,to:Instant,limit:Int=1000):List<StoredRecord> =
         dao.calibrationEvents(algorithmId,from.toString(),to.toString(),limit)
 
