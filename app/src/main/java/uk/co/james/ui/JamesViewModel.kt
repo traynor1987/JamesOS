@@ -154,6 +154,15 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
         repo.save("personalRecords",personal("ContextCorrection",fields("visitId" to p(visit.recordId),"field" to p("ownership"),"value" to p(ownership),"source" to p("JAMES_CORRECTION")),source="manual",timestamp=stamp))
         message.value="Time ownership updated."
     }
+    /** Subjective ownership is its own period record. It can live inside one
+     * physical Visit without forcing fake location splits. */
+    fun setCurrentOwnership(ownership:String)=action {
+        require(ownership in uk.co.james.location.TimeOwnership.entries.map {it.name})
+        val stamp=now(); val anchor=records.value.firstOrNull {it.kind=="LocationAnchor"}
+        records.value.filter {it.kind=="OwnershipPeriod"&&it.data().text("end").isBlank()}.forEach {open->repo.save(open.store,open.raw().changed("data" to open.data().changed("end" to p(stamp)),"updatedAt" to p(stamp)),open.rawJson)}
+        repo.save("personalRecords",personal("OwnershipPeriod",fields("start" to p(stamp),"end" to p(""),"ownership" to p(ownership),"ownershipSource" to p("JAMES_CONFIRMED"),"visitId" to p(anchor?.recordId?:""),"context" to p("UNKNOWN"),"provenance" to p("James confirmed current time ownership.")),source="manual",timestamp=stamp))
+        message.value="${ownership.lowercase().replaceFirstChar {it.uppercase()}} time recorded from now."
+    }
     fun addVisitInterruption(visitId:String,reason:String)=action {
         require(reason in listOf("SOMEONE_NEEDED_ME","CHORE_ERRAND","WORK","PHONE_CALL","APPOINTMENT","TRAVEL","CHOSE_TO_STOP","TIRED","OTHER","UNKNOWN"))
         val visit=repo.dao.get("personalRecords",visitId)?:return@action; val stamp=now(); val d=visit.data()

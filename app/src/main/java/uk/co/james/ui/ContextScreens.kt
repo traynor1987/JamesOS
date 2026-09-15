@@ -19,12 +19,14 @@ import uk.co.james.state.*
         listOf(balance.days7,balance.days14,balance.days28).forEach {window->
             HorizontalDivider(Modifier.padding(vertical=8.dp))
             Text(window.days.toString()+" DAYS",fontWeight=FontWeight.Black)
-            if(window.score==null)Muted("No recorded context yet — unknown, not a penalty.")
+            if(window.score==null)Muted("Not enough confirmed time ownership yet — unknown is not a penalty.")
             else {
-                Text("Personal time: "+window.personalMinutes/60+"h "+window.personalMinutes%60+"m")
-                Text("Obligation: "+window.obligationMinutes/60+"h "+window.obligationMinutes%60+"m")
+                Text("Personal: "+window.personalMinutes/60+"h "+window.personalMinutes%60+"m")
+                Text("Work: "+window.workMinutes/60+"h "+window.workMinutes%60+"m")
+                Text("Obligation: "+window.obligationMinutes/60+"h "+window.obligationMinutes%60+"m · Constrained: "+window.constrainedMinutes/60+"h "+window.constrainedMinutes%60+"m")
+                if(window.unknownMinutes>0)Muted("Unknown ownership: "+window.unknownMinutes/60+"h "+window.unknownMinutes%60+"m")
                 if(window.difficultMinutes>0)Text("Difficult context: "+window.difficultMinutes+"m")
-                Text("Chosen activities: "+window.positiveActivities)
+                if(window.positiveActivities>0)Muted("Activities logged: "+window.positiveActivities+" (not ownership evidence)")
             }
         }
     }}

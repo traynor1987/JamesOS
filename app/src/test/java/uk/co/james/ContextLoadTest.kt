@@ -14,6 +14,8 @@ class ContextLoadTest {
         StoredRecord.from("personalRecords",personal(kind,data,id,"manual",at.toString()).changed("updatedAt" to p(at.toString())))
     private fun context(id:String,type:String,start:Instant,end:Instant?=null,place:String="Same place")=
         record("ContextPeriod",fields("visitType" to p(type),"start" to p(start.toString()),"end" to p(end?.toString()?:""),"placeName" to p(place)) ,id,start)
+    private fun ownership(id:String,type:String,start:Instant,end:Instant)=
+        record("OwnershipPeriod",fields("ownership" to p(type),"ownershipSource" to p("JAMES_CONFIRMED"),"start" to p(start.toString()),"end" to p(end.toString())),id,start)
     @Test fun unknownContextIsNotAPenalty() {
         val current=currentContext(emptyList(),now)
         assertEquals(0,current.score)
@@ -54,11 +56,16 @@ class ContextLoadTest {
             listOf(context("o"+day,"OBLIGATION",start,start.plus(Duration.ofHours(3))),
                 record("ContextDifficultInterval",fields("contextId" to p("o"+day),"start" to p(start.plus(Duration.ofHours(1)).toString()),"end" to p(start.plus(Duration.ofHours(2)).toString())),"d"+day,start.plus(Duration.ofHours(1))))
         }
-        val personal=context("personal","PERSONAL",now.minus(Duration.ofHours(2)),now)
+        val personal=ownership("personal","AUTONOMOUS",now.minus(Duration.ofHours(2)),now)
         val balance=lifeBalance(difficultDays+personal,now)
         assertNotNull(balance.days28.score)
         assertTrue(balance.days28.score!! in 0..100)
         assertTrue(balance.days7.personalMinutes>=120)
+    }
+    @Test fun context_and_activity_do_not_create_ownership() {
+        val context=context("home","PERSONAL",now.minus(Duration.ofHours(3)),now)
+        val activity=record("LifeFactActivity",fields("title" to p("Gaming")),"gaming",now)
+        assertNull(lifeBalance(listOf(context,activity),now).current.score)
     }
     @Test fun historicalRutIsNotUsedOrRewritten() {
         val legacy=StoredRecord.from("loggedEvents",fields("id" to p("legacy"),"title" to p("Old pull"),"category" to p("INDEPENDENCE"),"points" to p(-100),"type" to p("negative"),"timestamp" to p(now.toString()),"createdAt" to p(now.toString()),"updatedAt" to p(now.toString()),"localDate" to p(now.toString().substring(0,10)) ))

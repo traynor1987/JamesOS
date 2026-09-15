@@ -233,6 +233,16 @@ The prior regular validation failure was repository workflow setup, before tests
 - The map is bounded-range (Today, Yesterday, seven days), visit/pin based and intentionally has no breadcrumb/route line. It frames current location plus the selected visits, keeps known-place definitions visually distinct from actual visits, exposes a compact legend, and opens Visit details from visit pins. Do not reintroduce raw route rendering.
 - Places and Map use the same scoped `PlaceVisit` truth. Current anchors and saved places are small scoped reads; no whole-history Flow or historical visit replay runs on a live GPS fix.
 
+## Unified context and time ownership model
+
+The prior UI mixed legacy `ContextPeriod` values (PERSONAL/NEUTRAL/OBLIGATION), activity counts, and Visit ownership, producing contradictory totals. The current authority is deliberately separated: **Visit = when/where; Context = situation; Activity = what James did; Time Ownership = who controlled the time; Interruption = what changed it; Life Balance = a cautious interpretation.**
+
+- `OwnershipPeriod` is the explicit semantic segment model. It can live within a physical Visit, so a Home visit is never split into fake location visits merely because ownership/activity changes. Explicit James-confirmed segments win over the enclosing Visit for the affected interval; edge-based interval resolution prevents double-counting.
+- `ownershipIntervals` / `ownershipSummary` are the sole ownership aggregation path. Compact Today and Life Balance consume it. Context, place category and logged/chosen activities do not create Personal minutes. `UNKNOWN` remains first class.
+- Life Balance is evidence-gated: fewer than two hours of confirmed classification is `LEARNING`, not “low personal time”. Activity count is retained only as secondary factual context. **UNKNOWN != ZERO; no evidence != negative evidence.**
+- Compact Today labels the shared row **TIME OWNERSHIP** and honestly says “No time ownership confirmed yet” when appropriate. Its Quick Actions separate Set Context, Log Activity, Check-in and one-tap current Time Ownership (My time / Obligation / Constrained / Work).
+- Definitions that must not regress: FREE != PERSONAL; HOME != PERSONAL; NOT WORKING != PERSONAL; ACTIVITY != OWNERSHIP; LOCATION != OWNERSHIP. Personal means James had deliberate, reasonably uninterrupted control; Constrained means apparently available time was not reliably his.
+
 The immediate priority remains proving this on a mature synthetic Room dataset/device and keeping all semantic windows explicit. Do not start Shift Tracker Part 2, maps, timers, settings redesign, Wear sampling, stress calibration UI, Time Ownership, new wellbeing features or unrelated polish before that validation is complete.
 
 

@@ -3,6 +3,8 @@ package uk.co.james.location
 import java.time.Instant
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import uk.co.james.core.*
+import uk.co.james.database.StoredRecord
 
 class TimeOwnershipTest {
     private fun instant(value:String)=Instant.parse(value)
@@ -22,5 +24,11 @@ class TimeOwnershipTest {
             OwnershipInterval(instant("2026-09-10T10:00:00Z"),instant("2026-09-10T10:20:00Z"),TimeOwnership.AUTONOMOUS),
             OwnershipInterval(instant("2026-09-10T10:20:00Z"),instant("2026-09-10T11:00:00Z"),TimeOwnership.AUTONOMOUS)))
         assertEquals(60,summary.longestAutonomousBlockMinutes)
+    }
+    @Test fun explicit_segment_wins_over_enclosing_visit_without_double_counting() {
+        fun row(kind:String,id:String,owner:String,start:String,end:String)=StoredRecord.from("personalRecords",personal(kind,fields("ownership" to p(owner),"start" to p(start),"end" to p(end)),id,"manual",start))
+        val intervals=ownershipIntervals(listOf(row("PlaceVisit","visit","UNKNOWN","2026-09-10T10:00:00Z","2026-09-10T11:00:00Z"),row("OwnershipPeriod","mine","AUTONOMOUS","2026-09-10T10:15:00Z","2026-09-10T10:45:00Z")),instant("2026-09-10T10:00:00Z"),instant("2026-09-10T11:00:00Z"))
+        val summary=ownershipSummary(intervals)
+        assertEquals(30,summary.autonomousMinutes);assertEquals(30,summary.unknownMinutes)
     }
 }

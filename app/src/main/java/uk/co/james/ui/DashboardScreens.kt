@@ -551,10 +551,10 @@ private fun wellbeingReserveColour(value:Int)=when(value){in 0..19->Color(0xFFFF
 @Composable private fun LifeBalanceCard(vm:JamesViewModel,summary:LifeBalanceSummary) {
     val current=summary.current
     JamesCard("Life Balance","${summary.trend} · ${summary.autonomy}") {
-        if(current.score==null) Muted("Learning from facts and context periods. Historical Rut entries remain unchanged.")
+        if(current.score==null) Muted("Not enough confirmed time ownership yet. Historical Rut entries remain unchanged.")
         else {
-            Text("Personal time: ${current.personalMinutes/60}h ${current.personalMinutes%60}m")
-            Text("Obligation: ${current.obligationMinutes/60}h ${current.obligationMinutes%60}m")
+            Text("Personal: ${current.personalMinutes/60}h ${current.personalMinutes%60}m · Work: ${current.workMinutes/60}h ${current.workMinutes%60}m")
+            Text("Obligation: ${current.obligationMinutes/60}h ${current.obligationMinutes%60}m · Constrained: ${current.constrainedMinutes/60}h ${current.constrainedMinutes%60}m")
             if(summary.helping.isNotEmpty())Muted("Helping: ${summary.helping.joinToString(" · ")}")
             if(summary.hurting.isNotEmpty())Muted("Hurting: ${summary.hurting.joinToString(" · ")}")
         }
