@@ -12,10 +12,10 @@
 
 ## Current release
 
-- Phone: 0.3.204
-- Wear: 0.2.4 (unchanged by the phone-only Today 2.0 feature)
+- Phone: 0.3.208
+- Wear: 0.2.2
 - James Calibration Engine: 1.0.3
-- Release: https://github.com/traynor1987/JamesOS/releases/tag/v0.3.204
+- Release: https://github.com/traynor1987/JamesOS/releases/tag/v0.3.208
 
 ## Today 2.0 / Compact Today
 
@@ -220,7 +220,7 @@ Implemented guardrails:
 - Existing persistence equality/fingerprint guards for Body Battery, Right Now and wellbeing remain required. Do not reintroduce timestamp-only derived writes or a broad reactive `SELECT *`.
 - Empty history now stays `Life Balance: LEARNING/UNKNOWN` without claiming **Hurting: Low personal time**. The warning requires recorded context evidence. It does not alter populated-data scoring.
 
-Regression coverage includes parse-once identity and empty-history Life Balance assertions. The public static gates (`public_repo_gate.py`, `audit_native.py`) passed locally. GitHub Actions run **#17** (`34947687540`) passed both the complete public unit/lint/phone-build validation and targeted emulator instrumentation on 2026-09-15. This Work environment has no Gradle binary, wrapper or Android SDK, so GitHub Actions remains the authoritative Android execution evidence.
+Regression coverage includes parse-once identity and empty-history Life Balance assertions. The public static gates (`public_repo_gate.py`, `audit_native.py`) passed locally. GitHub Actions runs **#17** (`34947687540`) and the post-merge `main` run **#19** (`34952660311`) both passed the complete public unit/lint/phone-build validation and targeted emulator instrumentation on 2026-09-15. Run #19 validates merged `main` commit `60a18e4776cf70b2388a1a9eecb36968c28cbb7e`. This Work environment has no Gradle binary, wrapper or Android SDK, so GitHub Actions remains the authoritative Android execution evidence.
 
 The prior regular validation failure was repository workflow setup, before tests: both jobs failed at the pinned `android-actions/setup-android` step. The successful signed release used the runner's existing `$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager`; public validation now uses that same explicit license/platform setup. Tests remain enabled and unchanged.
 
