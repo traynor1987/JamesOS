@@ -21,7 +21,7 @@
 
 The source-first, documentation-only audit is in [JAMES_OS_PRODUCT_AUDIT.md](JAMES_OS_PRODUCT_AUDIT.md). It classifies current user journeys rather than relying on prior handover claims, and records the proposed 1.0 boundary, scope rejects and prioritised roadmap.
 
-Highest-priority findings are: Health Connect code reads HRV/SpO2/respiration without matching manifest permissions; Visit merge currently deletes a merged Visit despite writing a correction; legacy Visit reconstruction scans all legacy rows at application start; Context/Activity/ownership records are not yet one fully linked semantic-period model; and Timeline still uses a calendar-date route while newer summaries use James Day. Treat these as correctness/foundation work before adding new providers, continuous Wear sampling, AI, prediction or another dashboard.
+The audit's original highest-priority findings are now remediated and tracked with evidence in [JAMES_OS_PRODUCT_AUDIT_REMEDIATION.md](JAMES_OS_PRODUCT_AUDIT_REMEDIATION.md): Health Connect capability/permission parity; non-destructive Visit corrections; incremental legacy Visit reconstruction; Visit-linked semantic periods; and James-Day Timeline filtering. The audit remains a historical snapshot; the remediation matrix and the current code are authoritative for present status. Continue to treat data correctness, provenance, bounded processing and coherent day semantics as prerequisites before adding providers, continuous Wear sampling, AI, prediction or another dashboard.
 
 ## Today 2.0 / Compact Today
 
