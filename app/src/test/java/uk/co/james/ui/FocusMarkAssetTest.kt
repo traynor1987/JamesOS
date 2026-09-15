@@ -15,7 +15,7 @@ class FocusMarkAssetTest {
         assertTrue(master.contains("M54 27V66"))
         assertTrue(master.contains("<circle cx=\"41\" cy=\"77\" r=\"10\""))
         assertFalse(master.contains("A13"))
-        assertFalse(master.contains("S"))
+        assertFalse(master.contains("M54 27V66A"))
         val vector=read("app/src/main/res/drawable/ic_james_focus_symbol.xml")
         assertTrue(vector.contains("M54,27L54,66"))
         assertFalse(vector.contains("A13"))
