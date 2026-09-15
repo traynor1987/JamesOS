@@ -324,6 +324,20 @@ The `Insights → Today` crash still reproduced on a Galaxy Fold release build a
 - `LocalCrashDiagnostics` is a local-only beta fallback when the release-path exception cannot be reproduced in CI. The default uncaught-exception handler records only exception type/message, James OS stack frames, route transition, UI phase, app version and Room schema. It intentionally excludes health values, location, notes, provider payloads and credentials. The report survives restart and is visible/clearable at **Settings → Advanced & Diagnostics**; it is never uploaded.
 - `RouteRecordsStateTest` now explicitly covers the Insights → Today hand-off; `StateEngineTest` proves identical immutable persisted evidence gives identical wellbeing output after process recreation. These tests do not substitute for the next real-device reproduction/report.
 
+### Contained Today preparation NPE root cause (2026-09-15)
+
+The component error boundary correctly kept the Fold alive, but a contained `NullPointerException` proved that the preparation path still treated a valid delayed-provider state as impossible. The root cause was `sleepiness`: historical Sleep records can establish a baseline while no current valid main Sleep record has arrived yet. The old confidence branch ranked `main` whenever a baseline existed, dereferencing the absent current record. This was intermittent because retry/later loading commonly brought the current provider Sleep row into the scoped snapshot.
+
+- That state is now explicit `LOW` confidence with **MAIN SLEEP PENDING OR UNAVAILABLE**; it is not an exception and does not hide historical evidence.
+- The preparation error boundary remains for genuine unexpected/malformed-data failures. Contained failures now create the same privacy-safe local report as uncaught failures, including stage (`today_preparation`), exception message and first James OS frame/file/line. It is visible in **Settings → Advanced & Diagnostics** and never stores health values, location, notes, credentials or provider payloads.
+- `SleepinessTest.historicalBaselineWithoutCurrentMainSleepRemainsAValidLearningState` protects the exact data shape. `LocalCrashDiagnosticsTest` protects stage/message/frame capture. Do not turn missing current sleep into a fake observed value or persist a prior as evidence.
+
+### Today refresh state machine and persistence-loop guard (2026-09-15)
+
+Today must distinguish first preparation from an ordinary evidence refresh. `TodayPreparation` now has `INITIAL_LOADING`, `READY(snapshot)`, `REFRESHING(previousSnapshot)` and `FAILED(previousSnapshot?, diagnostic)`. Only the first usable page shows the full preparation card. A foreground minute, Wear/Health Connect/WHOOP/Location/Context update or provider-freshness tick keeps the complete previous coherent snapshot visible while the next bounded snapshot prepares, then atomically replaces it. A real refresh failure keeps that snapshot visible with a compact retry notice; it never uses `Loading` or a NPE as normal control flow.
+
+Derived `mental-wellbeing`, `right-now`, `body-battery`, `EnergySnapshot` and `StateEstimate` rows are persisted/displayed history, not new semantic inputs. `todayPreparationInputRecords` excludes them from the bounded evidence stream used to recalculate/persist their own outputs, and `distinctUntilChanged` prevents Room invalidation feedback loops. `todayRefreshTrigger` records only a privacy-safe evidence type/source or `clock/freshness` in the current diagnostic phase; it never records values, locations or content. `TodayPreparationStateTest` covers initial/refresh/error/rapid refresh transitions and derived-row exclusion.
+
 ### Narrative and freshness continuation
 
 - Timeline is a bounded **James Day** presentation. A completed Visit now narrates linked `ContextPeriod`, `LifeFactActivity`, `OwnershipPeriod` and `VisitInterruption` evidence inside its visit card, while the stored records remain independently editable and exported. Do not delete raw semantic rows merely to keep Timeline quiet.

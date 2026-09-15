@@ -45,6 +45,10 @@ import kotlin.math.abs
         return
     }
     val clock=foregroundMinute()
+    // Do not let persisted display snapshots feed the semantic preparation
+    // loop. They remain in [records] for their own cards/history.
+    val preparationRecords=remember(records) { todayPreparationInputRecords(records) }
+    val preparationSignature=remember(preparationRecords) { todayPreparationInputSignature(preparationRecords) }
     val wellbeing by vm.wellbeing.collectAsStateWithLifecycle()
     val wellbeingSettings by vm.wellbeingSettings.collectAsStateWithLifecycle()
     val energyTimeSettings by vm.energyTimeSettings.collectAsStateWithLifecycle()
@@ -53,47 +57,53 @@ import kotlin.math.abs
     // Prepare every calculation that feeds the first dashboard cards off the UI
     // thread. This includes the previously synchronous Right Now calculation.
     val preparationRetry by vm.todayPreparationRetry.collectAsStateWithLifecycle()
-    val preparation by produceState<TodayPreparation>(TodayPreparation.Loading,records,clock,energyTimeSettings,wellbeing,preparationRetry) {
-        value=TodayPreparation.Loading
+    val preparation by produceState<TodayPreparation<TodayPrepared>>(TodayPreparation.InitialLoading,preparationRecords,clock,energyTimeSettings,wellbeing,preparationRetry) {
+        // A foreground minute or scoped Room update is a refresh when we
+        // already have a coherent page. Keep that whole snapshot visible
+        // until the replacement has prepared successfully.
+        val previous=value.visibleSnapshot()
+        vm.recordUiPhase(if(previous==null) "today_initial_preparation" else "today_refreshing:${todayRefreshTrigger(previous.inputSignature,preparationRecords)}")
+        value=beginTodayPreparation(value)
         value=try { TodayPreparation.Ready(withContext(Dispatchers.Default) {
-            val personal=records.filter {it.store=="personalRecords"}.map {it.raw()}
-            val routines=records.filter {Habits.due(it.raw(),today())}
-            val day=jamesDayWindow(records,clock)
-            val wearSignals=records.asSequence().filter {it.kind=="HealthMetric"&&it.source=="wear"&&it.data().text("metric") in setOf("Heart rate","James Stress","HRV","Skin conductance","Skin temperature")}.groupBy {it.data().text("metric")}.mapValues {(_,rows)->rows.maxByOrNull {it.timestamp}!!}.toMutableMap()
+            val personal=preparationRecords.filter {it.store=="personalRecords"}.map {it.raw()}
+            val routines=preparationRecords.filter {Habits.due(it.raw(),today())}
+            val day=jamesDayWindow(preparationRecords,clock)
+            val wearSignals=preparationRecords.asSequence().filter {it.kind=="HealthMetric"&&it.source=="wear"&&it.data().text("metric") in setOf("Heart rate","James Stress","HRV","Skin conductance","Skin temperature")}.groupBy {it.data().text("metric")}.mapValues {(_,rows)->rows.maxByOrNull {it.timestamp}!!}.toMutableMap()
             wearSignals["James Stress"]?.let {row->
                 val rawValue=row.data().number("value",Double.NaN)
                 if(rawValue.isFinite()) {
-                    val active=uk.co.james.calibration.JamesCalibrationEngine.activeCalibration(records,"james_stress",uk.co.james.state.JamesAlgorithmRegistry.get("james_stress")!!.calibrationVersion,uk.co.james.state.JamesAlgorithmRegistry.STRESS_VERSION)
-                    val calibrated=uk.co.james.calibration.JamesCalibrationEngine.applyActiveValue(rawValue,records,"james_stress")
+                    val active=uk.co.james.calibration.JamesCalibrationEngine.activeCalibration(preparationRecords,"james_stress",uk.co.james.state.JamesAlgorithmRegistry.get("james_stress")!!.calibrationVersion,uk.co.james.state.JamesAlgorithmRegistry.STRESS_VERSION)
+                    val calibrated=uk.co.james.calibration.JamesCalibrationEngine.applyActiveValue(rawValue,preparationRecords,"james_stress")
                     wearSignals["James Stress"]=StoredRecord.from(row.store,row.raw().changed("data" to row.data().changed("value" to p(calibrated),"rawSourceValue" to p(rawValue),"calibrationVersion" to p(active.version),"calibrationSetId" to p(active.setId))))
                 }
             }
-            val moments=timeline(records).filter {moment->runCatching {Instant.parse(moment.timestamp)>=day.start}.getOrDefault(false)}
-            val nutrition=nutritionToday(records,day,clock)
-            val right=rightNowSummary(records,energyTimeSettings,clock)
-            val context=currentContext(records,clock)
-            val balance=lifeBalance(records,clock)
-            val health=prepareWhoopOverview(records,clock)
-            val compact=prepareCompactToday(records,clock,day,nutrition,right,wellbeing,health,context,balance,wearSignals,energyTimeSettings,history.hasUserHistory)
+            val moments=timeline(preparationRecords).filter {moment->runCatching {Instant.parse(moment.timestamp)>=day.start}.getOrDefault(false)}
+            val nutrition=nutritionToday(preparationRecords,day,clock)
+            val right=rightNowSummary(preparationRecords,energyTimeSettings,clock)
+            val context=currentContext(preparationRecords,clock)
+            val balance=lifeBalance(preparationRecords,clock)
+            val health=prepareWhoopOverview(preparationRecords,clock)
+            val compact=prepareCompactToday(preparationRecords,clock,day,nutrition,right,wellbeing,health,context,balance,wearSignals,energyTimeSettings,history.hasUserHistory)
             TodayPrepared(personal,routines,routines.count {Habits.complete(personal,it.recordId,today())},day,
-                moments,nutrition,right,context,balance,health,wearSignals,wellbeing,compact)
+                moments,nutrition,right,context,balance,health,wearSignals,wellbeing,compact,preparationSignature)
         }) } catch(error:CancellationException) { throw error } catch(error:Throwable) {
             vm.recordTodayPreparationFailure(error)
-            TodayPreparation.Failed(error.javaClass.simpleName,uk.co.james.diagnostics.jamesStackFrames(error).firstOrNull())
+            TodayPreparation.Failed(value.visibleSnapshot(),error.javaClass.simpleName,uk.co.james.diagnostics.jamesStackFrames(error).firstOrNull())
         }
     }
-    if(preparation is TodayPreparation.Loading) {
+    if(preparation is TodayPreparation.InitialLoading) {
         AdaptiveCards(listOf({PageTitle("Good morning, James.",LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE d MMMM")))},{JamesCard("Health monitor","Preparing current health context") {LinearProgressIndicator(modifier=Modifier.fillMaxWidth())}}),listOf("title","health-monitor"))
         return
     }
-    if(preparation is TodayPreparation.Failed) {
-        val failure=preparation as TodayPreparation.Failed
+    if(preparation is TodayPreparation.Failed&&preparation.visibleSnapshot()==null) {
+        val failure=preparation as TodayPreparation.Failed<TodayPrepared>
         AdaptiveCards(listOf({PageTitle("Good morning, James.",LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE d MMMM")))},{JamesCard("Health monitor","Current health context unavailable") {Muted("Preparation stopped safely (${failure.type}${failure.firstJamesFrame?.let {" · $it"}.orEmpty()}). Your saved history has not been changed.");Muted("Technical details are available in Advanced & Diagnostics.");Button(onClick=vm::retryTodayPreparation,modifier=Modifier.fillMaxWidth()){Text("RETRY")}}}),listOf("title","health-monitor-error"))
         return
     }
-    val ready=(preparation as TodayPreparation.Ready).value
+    val ready=checkNotNull(preparation.visibleSnapshot())
     if(compactToday) {
-        CompactTodayScreen(vm,ready,energyTimeSettings)
+        val refreshFailure=preparation as? TodayPreparation.Failed<TodayPrepared>
+        CompactTodayScreen(vm,ready,energyTimeSettings,preparation is TodayPreparation.Refreshing,refreshFailure)
         return
     }
     val personal=ready.personal;val routines=ready.routines;val done=ready.done
@@ -102,6 +112,11 @@ import kotlin.math.abs
     val cardKeys=mutableListOf<String>()
     fun card(key:String,content:@Composable ()->Unit){cardKeys+=key;cards+=content}
     card("title") {PageTitle("Good ${if(LocalTime.now().hour<12)"morning"else if(LocalTime.now().hour<18)"afternoon"else "evening"}, James.",LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE d MMMM")))}
+    if(preparation is TodayPreparation.Refreshing) card("health-refresh") {LinearProgressIndicator(modifier=Modifier.fillMaxWidth())}
+    if(preparation is TodayPreparation.Failed) {
+        val failure=preparation as TodayPreparation.Failed<TodayPrepared>
+        card("health-refresh-error") {JamesCard("Health monitor","Latest refresh unavailable") {Muted("Showing your last coherent state. ${failure.type}${failure.firstJamesFrame?.let {" · $it"}.orEmpty()}");TextButton(onClick=vm::retryTodayPreparation){Text("RETRY")}}}
+    }
     if(!history.hasUserHistory)card("history-import") {JamesCard("Your history belongs here") {Muted("Import your RUT or James backup to continue your existing journey.");Button(onClick={vm.navigate("Import Centre")}){Text("Import existing RUT data")}}}
     card("health-monitor") {WhoopOverview(
         snapshot=ready.healthOverview,openConnections={vm.navigate("Connections")},
@@ -130,12 +145,7 @@ import kotlin.math.abs
     AdaptiveCards(cards,cardKeys)
 }
 
-internal data class TodayPrepared(val personal:List<JsonObject>,val routines:List<StoredRecord>,val done:Int,val day:JamesDayWindow,val moments:List<uk.co.james.timeline.Moment>,val nutrition:NutritionTodayUi,val rightNow:RightNowSummary,val context:ContextLoadSummary,val lifeBalance:LifeBalanceSummary,val healthOverview:WhoopOverviewSnapshot,val wearSignals:Map<String,StoredRecord>,val wellbeing:MentalWellbeingSummary,val compact:CompactTodayUi)
-internal sealed interface TodayPreparation {
-    data object Loading:TodayPreparation
-    data class Ready(val value:TodayPrepared):TodayPreparation
-    data class Failed(val type:String,val firstJamesFrame:String?):TodayPreparation
-}
+internal data class TodayPrepared(val personal:List<JsonObject>,val routines:List<StoredRecord>,val done:Int,val day:JamesDayWindow,val moments:List<uk.co.james.timeline.Moment>,val nutrition:NutritionTodayUi,val rightNow:RightNowSummary,val context:ContextLoadSummary,val lifeBalance:LifeBalanceSummary,val healthOverview:WhoopOverviewSnapshot,val wearSignals:Map<String,StoredRecord>,val wellbeing:MentalWellbeingSummary,val compact:CompactTodayUi,val inputSignature:Int)
 private fun NutritionTodayUi.hasData()=listOf(calories,protein,carbs,fat,waterMl,caffeine).any {it!=null}
 
 @Composable private fun NutritionTodayCard(summary:NutritionTodayUi) {

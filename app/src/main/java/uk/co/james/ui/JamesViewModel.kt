@@ -54,7 +54,10 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
         emitAll(repo.dao.observeStateInputs(java.time.Instant.now().minus(java.time.Duration.ofDays(40)).toString())
             .map { RouteRecordsState("current-health",it,true) })
     }.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),RouteRecordsState("current-health",emptyList(),false))
-    private val stateRecords=stateRecordsSnapshot.map {it.records}
+    /** Derived snapshots are retained for history/display but must never
+     * invalidate the bounded source-evidence stream that persists them. */
+    private val stateRecords=stateRecordsSnapshot.map {todayPreparationInputRecords(it.records)}
+        .distinctUntilChanged()
         .stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),emptyList())
     val currentHealthInputsReadiness=stateRecordsSnapshot.map {CurrentHealthInputsReadiness(it.loaded)}
         .stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),CurrentHealthInputsReadiness(false))

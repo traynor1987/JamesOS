@@ -143,10 +143,18 @@ internal fun compactTimeline(moments:List<Moment>,day:JamesDayWindow):List<Momen
 
 private fun compactDuration(minutes:Long)=if(minutes<60)"${minutes}m" else "${minutes/60}h ${minutes%60}m"
 
-@Composable internal fun CompactTodayScreen(vm:JamesViewModel,ready:TodayPrepared,settings:EnergyTimeSettings) {
+@Composable internal fun CompactTodayScreen(
+    vm:JamesViewModel,
+    ready:TodayPrepared,
+    settings:EnergyTimeSettings,
+    refreshing:Boolean=false,
+    refreshFailure:TodayPreparation.Failed<TodayPrepared>?=null
+) {
     val state=ready.compact
     LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(horizontal=16.dp,vertical=18.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
         item("title") {Box(Modifier.fillMaxWidth(),contentAlignment=Alignment.Center){Column(Modifier.widthIn(max=840.dp)){PageTitle("Good ${if(LocalTime.now().hour<12)"morning" else if(LocalTime.now().hour<18)"afternoon" else "evening"}, James.",LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE d MMMM")))}}}
+        if(refreshing)item("health-refresh") {LinearProgressIndicator(Modifier.fillMaxWidth())}
+        refreshFailure?.let {failure->item("health-refresh-error") {JamesCard("Health monitor","Latest refresh unavailable") {Muted("Showing your last coherent state. ${failure.type}${failure.firstJamesFrame?.let {" · $it"}.orEmpty()}");TextButton(onClick=vm::retryTodayPreparation){Text("RETRY")}}}}
         if(state.needsHistoryImport)item("history-import") {JamesCard("Your history belongs here"){Muted("Import your RUT or James backup to continue your existing journey.");Button(onClick={vm.navigate("Import Centre")},modifier=Modifier.fillMaxWidth()){Text("IMPORT EXISTING DATA")}}}
         item("right-now") {CompactSection("RIGHT NOW") {
             state.primary.chunked(2).forEach {row->Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)){row.forEach {metric->CompactMetricCard(metric,Modifier.weight(1f)){openMetric(vm,metric.id)}}}}
