@@ -197,3 +197,12 @@ Timeline, Compact/Classic Today, My Day and calibration snapshots receive factua
 - Public validation has no `pull_request_target`, no secrets and least-privilege `contents: read`.
 - **Never import old Jamssos Git history into JamesOS. Never commit release signing key material. Never commit the Samsung standalone AAR unless explicit redistribution rights are established.**
 
+
+## Deliberate public signing generation (0.3.208 onward)
+
+- JamesOS deliberately begins a new permanent Android signing generation at phone **0.3.208** and Wear **0.2.2**. It is not compatible with the private Jamssos signer used by 0.3.207 and earlier.
+- The new permanent public certificate SHA-256 is `176980d12255938bf049b274992a696978417a052b9492cf87a5048e0496f6f2`. It is committed in `signing/certificate.sha256`; the release workflow verifies the protected key before build and both APK signers after build.
+- The protected `james-release` environment is authoritative for the matching keystore and password. Never regenerate or commit that private material casually.
+- Migration from legacy builds is **export → uninstall → install → restore**. Wear legacy builds may need manual uninstall/reinstall.
+- Existing Import Centre backup is the migration format: `JamesAndroid` JSON schema 1 exports all persisted stores—settings, event templates, logged events, daily notes, milestones, metadata, personal records, and preserved imported archives. This includes James-only manual records, calibration/learned calibration records, context definitions/corrections, James Day metadata/history and local nutrition records when stored locally. WHOOP, Health Connect, Samsung and other provider-source measurements can be resynced after restoring.
+- Import validates every required store and row, uses additive merge (existing conflicts retained), preserves the original import, and writes a pre-import snapshot. Export the file to a user-chosen location such as **Downloads**; app-private daily snapshots are deleted by Android uninstall and are not the migration backup.
