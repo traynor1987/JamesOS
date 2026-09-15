@@ -144,8 +144,16 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
     }
     fun logLifeActivity(activity:String)=action {
         require(activity in listOf("Gym","Gaming","Cinema","Walk","Personal project","Went out","Other"))
-        val stamp=now()
-        repo.save("personalRecords",personal("LifeFactActivity",fields("title" to p(activity),"activityType" to p(activity.uppercase().replace(" ","_")),"date" to p(today()),"algorithmVersion" to p(uk.co.james.state.JamesAlgorithmRegistry.LIFE_BALANCE_VERSION)),timestamp=stamp))
+        val stamp=now(); val anchor=records.value.firstOrNull {it.kind=="LocationAnchor"}
+        val context=uk.co.james.state.currentContext(records.value).active
+        val day=uk.co.james.time.jamesDayWindow(records.value,java.time.Instant.parse(stamp))
+        repo.save("personalRecords",personal("LifeFactActivity",fields(
+            "title" to p(activity),"activityType" to p(activity.uppercase().replace(" ","_")),
+            "start" to p(stamp),"end" to p(""),"date" to p(today()),
+            "anchorId" to p(anchor?.recordId?:""),"contextId" to p(context?.id?:""),
+            "jamesDayId" to p(day.id),"activitySource" to p("JAMES_CONFIRMED"),
+            "algorithmVersion" to p(uk.co.james.state.JamesAlgorithmRegistry.LIFE_BALANCE_VERSION)
+        ),timestamp=stamp))
         message.value="Activity recorded."
     }
     /** A correction is separate user evidence; the GPS observation and inferred
@@ -363,6 +371,19 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
         if(dialog.value=="Routine")require(raw.obj("data").text("title").isNotBlank()){"Give the routine a name."}
         if(dialog.value=="MoodEntry")require(uk.co.james.state.stateChoices.any {(key,choices)->raw.obj("data").text(key) in choices}) {"Choose at least one signal. Leave the others blank."}
         if(dialog.value in listOf("Event","LifeFactActivity"))require(raw.obj("data").text("title").isNotBlank()) {"Describe the moment."}
+        // New semantic records share the same current evidence anchor and James
+        // Day.  They stay distinct dimensions, but later Timeline/detail views
+        // can join them without guessing from unrelated history.
+        if(dialog.value in listOf("ContextPeriod","LifeFactActivity")) {
+            val stamp=now(); val anchor=records.value.firstOrNull {it.kind=="LocationAnchor"}
+            val context=uk.co.james.state.currentContext(records.value).active
+            val day=uk.co.james.time.jamesDayWindow(records.value,java.time.Instant.parse(stamp))
+            val extras=if(dialog.value=="LifeFactActivity") fields(
+                "anchorId" to p(anchor?.recordId?:""),"contextId" to p(context?.id?:""),
+                "jamesDayId" to p(day.id),"activitySource" to p("JAMES_CONFIRMED")
+            ) else fields("anchorId" to p(anchor?.recordId?:""),"jamesDayId" to p(day.id),"contextSource" to p("JAMES_CONFIRMED"))
+            raw=raw.changed("data" to raw.obj("data").changed(*extras.entries.map {it.key to it.value}.toTypedArray()))
+        }
         val store=saved.get<String>("editor-store")?:"personalRecords"
         val original=saved.get<String>("editor-original")?.ifBlank {null}?.let {json.parseToJsonElement(it).jsonObject}
         repo.save(store,raw,original?.toString())

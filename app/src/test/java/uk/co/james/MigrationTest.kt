@@ -10,6 +10,7 @@ import uk.co.james.routines.*
 import uk.co.james.time.timeBreakdown
 import uk.co.james.calibration.*
 import uk.co.james.state.JamesAlgorithmRegistry
+import uk.co.james.location.legacyReconstructionUsesFullScan
 import java.time.Instant
 
 class MigrationTest {
@@ -63,6 +64,26 @@ class MigrationTest {
         )
         val restored=BackupCodec.parse(BackupCodec.export(rows).toString()).rows
         assertEquals(rows.map {it.rawJson}.toSet(),restored.map {it.rawJson}.toSet())
+    }
+    @Test fun every_current_non_resyncable_semantic_record_round_trips_together() {
+        val rows=listOf(
+            StoredRecord.from("personalRecords",personal("Place",fields("title" to p("Synthetic Home"),"latitude" to p(53.0),"longitude" to p(-2.0)),"place",timestamp=stamp)),
+            StoredRecord.from("personalRecords",personal("PlaceVisit",fields("title" to p("Synthetic Home"),"start" to p(stamp),"end" to p("2025-09-09T13:00:00Z"),"ownership" to p("UNKNOWN"),"provenance" to p("MEASURED")),"visit",timestamp=stamp)),
+            StoredRecord.from("personalRecords",personal("VisitEvidenceSnapshot",fields("visitId" to p("visit"),"rawVisit" to event("raw","initial",0)),"snapshot",timestamp=stamp)),
+            StoredRecord.from("personalRecords",personal("VisitCorrection",fields("visitId" to p("visit"),"action" to p("MERGED_INTO"),"reversible" to p(true)),"correction",timestamp=stamp)),
+            StoredRecord.from("personalRecords",personal("Routine",fields("title" to p("Walk"),"days" to JsonArray(listOf(p(1)))),"routine",timestamp=stamp)),
+            StoredRecord.from("personalRecords",personal("RoutineCompletion",fields("routineId" to p("routine"),"date" to p("2025-09-09"),"completed" to p(true)),"routine-done",timestamp=stamp)),
+            StoredRecord.from("personalRecords",personal("MoodEntry",fields("mood" to p("LOW"),"note" to p("synthetic")),"checkin",timestamp=stamp)),
+            StoredRecord.from("personalRecords",personal("JournalEntry",fields("text" to p("synthetic private entry")),"journal",timestamp=stamp)),
+            StoredRecord.from("settings",fields("key" to p("compact-today"),"value" to p(true),"timestamp" to p(stamp),"updatedAt" to p(stamp)))
+        )
+        val restored=BackupCodec.parse(BackupCodec.export(rows).toString()).rows
+        assertEquals(rows.map {it.rawJson}.toSet(),restored.map {it.rawJson}.toSet())
+    }
+    @Test fun legacy_reconstruction_is_full_only_for_first_run_or_import() {
+        assertTrue(legacyReconstructionUsesFullScan("",false))
+        assertTrue(legacyReconstructionUsesFullScan("2026-09-15T10:00:00Z",true))
+        assertFalse(legacyReconstructionUsesFullScan("2026-09-15T10:00:00Z",false))
     }
     @Test fun importedOlderActiveCalibrationCannotReplaceCurrentActive() {
         val entry=JamesAlgorithmRegistry.get("live_energy")!!

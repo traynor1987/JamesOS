@@ -31,6 +31,10 @@ internal fun reconstructedVisit(record:StoredRecord):kotlinx.serialization.json.
 
 private const val LEGACY_VISIT_RECONSTRUCTION_VERSION="legacy-visit-reconstruction-v2"
 
+/** Kept pure so the migration policy is regression-tested without a device DB. */
+internal fun legacyReconstructionUsesFullScan(watermark:String,afterImport:Boolean):Boolean =
+    afterImport || watermark.isBlank()
+
 /**
  * Versioned and idempotent. Startup processes only evidence newer than its
  * watermark; import deliberately requests one bounded reconciliation pass.
@@ -39,7 +43,7 @@ private const val LEGACY_VISIT_RECONSTRUCTION_VERSION="legacy-visit-reconstructi
 suspend fun JamesRepository.reconstructLegacyVisits(afterImport:Boolean=false):Int {
     val state=dao.get("metadata",LEGACY_VISIT_RECONSTRUCTION_VERSION)
     val watermark=state?.raw()?.obj("value")?.text("lastUpdatedAt").orEmpty()
-    val evidence=if(afterImport||watermark.isBlank()) dao.legacyVisitEvidence()
+    val evidence=if(legacyReconstructionUsesFullScan(watermark,afterImport)) dao.legacyVisitEvidence()
     else dao.legacyVisitEvidenceUpdatedAfter(watermark)
     var created=0
     evidence.forEach { evidence ->

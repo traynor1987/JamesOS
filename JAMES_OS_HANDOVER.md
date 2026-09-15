@@ -273,3 +273,14 @@ Settings is a directory, not a second dashboard. The Settings home uses concise 
 - The Settings landing page observes only theme/Today preferences plus Health Connect, WHOOP configuration and Wear status. It does not collect records or reintroduce the broad history Flow. Connections and Diagnostics retain their existing bounded state when explicitly opened.
 - SettingsNavigationTest protects category coverage, authoritative Connections/Import Centre ownership and Settings-detail back routing. Settings search is deliberately deferred: the bounded directory and synonym-bearing navigation contract are enough now; no separate search subsystem was added.
 - PR #2 run #21 (34956578949) passed public unit/lint/phone compilation and emulator instrumentation before merge.
+
+## Product audit remediation (2026-09-15)
+
+`JAMES_OS_PRODUCT_AUDIT.md` remains the historical source-first audit snapshot. Its implementation-status companion is **`JAMES_OS_PRODUCT_AUDIT_REMEDIATION.md`**; read both before changing semantic/day architecture.
+
+- Health Connect capability declarations, runtime requests and source reads now share `HealthCapabilities`; HRV, oxygen saturation and respiratory-rate parity is test-protected.
+- Visit correction is non-destructive: merge/split preserve immutable raw Visit evidence snapshots and reversible correction records, and superseded rows are excluded only from the current interpreted Visit presentation.
+- Legacy Visit reconstruction is versioned and watermark-based. First run or an import reconciliation can inspect legacy evidence; ordinary startup uses only newer evidence. Do not restore a full historical scan on every launch.
+- New Context and Activity actions write their own canonical semantic records and attach the current anchor/context/James Day where available. Context means situation; Activity means what James did; neither writes Personal ownership. The primary Nova tab was removed because no provider is configured.
+- Ownership coverage is explicit alongside the canonical ownership ledger. Life Balance and Today use that shared ledger and must retain `UNKNOWN != zero` / `no evidence != low Personal time` behaviour.
+- Current deferred work remains: adaptive Wear detailed sampling, Calendar/weather/screen time, Time Ownership trends/correlations, predictive alerts, Nova AI and Shift Tracker sender Part 2. None are authorised as a substitute for validating this foundation on a populated device.
