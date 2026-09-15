@@ -245,6 +245,10 @@ import kotlin.math.roundToInt
             Text("Autonomous ${visitTime(summary.autonomousMinutes)} · Constrained ${visitTime(summary.constrainedMinutes)}")
             Muted("Unknown ${visitTime(summary.unknownMinutes)} · ${summary.interruptions} interruption${if(summary.interruptions==1)"" else "s"} · longest autonomous block ${visitTime(summary.longestAutonomousBlockMinutes)}")
         }},
+        {val unresolved=visits.filter {it.data().text("ownership","UNKNOWN")=="UNKNOWN"}.take(3);if(unresolved.isNotEmpty()) JamesCard("Periods to review","${unresolved.size} ownership decision${if(unresolved.size==1)"" else "s"}") {
+            Muted("Only completed visits with useful duration appear here. Unknown stays Unknown until you choose.")
+            unresolved.forEach {visit->val data=visit.data();Text("${data.text("title","Unknown place")} · ${visitTime(data.number("durationMin").toLong())}");Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(4.dp)){listOf("AUTONOMOUS" to "PERSONAL","COMMITTED" to "OBLIGATION","CONSTRAINED" to "CONSTRAINED","WORK" to "WORK").forEach {(value,label)->TextButton(onClick={vm.setVisitOwnership(visit,value)},modifier=Modifier.weight(1f)){Text(label,style=MaterialTheme.typography.labelSmall)}}}}
+        }},
         {if(unknownVisits.isNotEmpty()) JamesCard("Where was this?","${unknownVisits.size} stop${if(unknownVisits.size==1)"" else "s"} need${if(unknownVisits.size==1)"s" else ""} a name") {
             Muted("Choose a saved place to label a completed stop. James will use that label automatically next time you are nearby.")
             unknownVisits.take(5).forEach {visit->

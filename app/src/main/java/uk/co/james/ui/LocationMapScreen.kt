@@ -17,7 +17,7 @@ import uk.co.james.database.StoredRecord
 import uk.co.james.location.authoritativeVisits
 
 private enum class MapPinType { CURRENT, VISIT, UNKNOWN_VISIT, KNOWN_PLACE }
-private data class VisitPin(val id:String,val title:String,val subtitle:String,val latitude:Double,val longitude:Double,val type:MapPinType)
+private data class VisitPin(val id:String,val title:String,val subtitle:String,val latitude:Double,val longitude:Double,val type:MapPinType,val visitIds:List<String> = listOf(id))
 
 @Composable fun LocationMapScreen(vm:JamesViewModel,records:List<StoredRecord>) {
     val range by vm.locationMapRange.collectAsState()
@@ -25,6 +25,9 @@ private data class VisitPin(val id:String,val title:String,val subtitle:String,v
     val completedPins=remember(visits) { visits.mapNotNull { visit->
         val d=visit.data();val lat=d.number("latitude");val lon=d.number("longitude")
         if(lat==0.0&&lon==0.0)null else VisitPin(visit.recordId,d.text("title","Unknown place"),"${d.text("start").take(16).replace('T',' ')} · ${d.number("durationMin").toLong()}m · ${d.text("ownership","UNKNOWN")} · ${d.text("ownershipSource","INFERRED")}",lat,lon,if(d.text("title","Unknown place")=="Unknown place")MapPinType.UNKNOWN_VISIT else MapPinType.VISIT)
+    }.groupBy {pin->"${pin.type}:${pin.title}:${(pin.latitude*1000).toInt()}:${(pin.longitude*1000).toInt()}"}.values.map {group->
+        val latest=group.maxByOrNull {it.subtitle}!!
+        if(group.size==1)latest else latest.copy(title="${latest.title} · ${group.size} visits",subtitle="${group.size} completed visits here · tap to review",visitIds=group.flatMap {it.visitIds})
     }}
     // Current physical coordinates are deliberately independent of place matching.
     val currentPin=remember(records) {records.firstOrNull {it.kind=="LocationAnchor"}?.let {anchor->val d=anchor.data();val lat=d.number("latitude");val lon=d.number("longitude");if(lat==0.0&&lon==0.0)null else VisitPin(anchor.recordId,"You now · ${d.text("placeName","Unknown place")}","${d.text("visitState","CONFIRMING")} · here ${d.number("durationMin").toLong()}m · accuracy ${d.number("accuracy").toInt()}m",lat,lon,MapPinType.CURRENT)}}
@@ -43,7 +46,7 @@ private data class VisitPin(val id:String,val title:String,val subtitle:String,v
                     map.overlays.clear()
                     pins.forEach { pin->Marker(map).apply {
                         position=GeoPoint(pin.latitude,pin.longitude);title=when(pin.type){MapPinType.CURRENT->"You now";MapPinType.VISIT->"Visit";MapPinType.UNKNOWN_VISIT->"Unknown visit";MapPinType.KNOWN_PLACE->"Known place"}+" · ${pin.title}";subDescription=pin.subtitle;setAnchor(Marker.ANCHOR_CENTER,Marker.ANCHOR_BOTTOM)
-                        setOnMarkerClickListener { _,_-> if(pin.type==MapPinType.VISIT||pin.type==MapPinType.UNKNOWN_VISIT) vm.open("PlaceVisit",records.firstOrNull {it.recordId==pin.id}); true };map.overlays.add(this)
+                        setOnMarkerClickListener { _,_-> if(pin.type==MapPinType.VISIT||pin.type==MapPinType.UNKNOWN_VISIT) { if(pin.visitIds.size==1)vm.open("PlaceVisit",records.firstOrNull {it.recordId==pin.id}) else vm.navigate("Location") }; true };map.overlays.add(this)
                     }}
                     val frame=(listOfNotNull(currentPin)+completedPins).map {GeoPoint(it.latitude,it.longitude)}
                     map.post {if(frame.size==1){map.controller.setZoom(15.5);map.controller.setCenter(frame.first())}else if(frame.size>1){map.zoomToBoundingBox(BoundingBox.fromGeoPoints(frame),true,80)}}
@@ -53,7 +56,7 @@ private data class VisitPin(val id:String,val title:String,val subtitle:String,v
             }
         }
         currentPin?.let {JamesCard("Current visit",it.title.removePrefix("You now · ")) {Muted(it.subtitle);Muted("Physical location is shown even when place matching is Unknown.")}}
-        completedPins.firstOrNull()?.let {latest->JamesCard("Latest completed visit",latest.title) {Muted(latest.subtitle);TextButton(onClick={vm.open("PlaceVisit",records.firstOrNull {it.recordId==latest.id})}){Text("View visit details and corrections")}}}
+        completedPins.firstOrNull()?.let {latest->JamesCard("Latest completed visit",latest.title) {Muted(latest.subtitle);TextButton(onClick={if(latest.visitIds.size==1)vm.open("PlaceVisit",records.firstOrNull {it.recordId==latest.id}) else vm.navigate("Location")}){Text(if(latest.visitIds.size==1)"View visit details and corrections" else "Review these visits")}}}
         if(visits.isEmpty())Muted("No completed visits exist in this range yet. Saved known places are definitions; they are not counted as visits.")
     }
 }
