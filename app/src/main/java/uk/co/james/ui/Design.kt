@@ -1,6 +1,7 @@
 package uk.co.james.ui
 
 import androidx.compose.foundation.*
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -50,7 +51,23 @@ private val jamesTypography=Typography(
     labelSmall=TextStyle(fontWeight=FontWeight.Bold,fontSize=11.sp,lineHeight=15.sp,letterSpacing=.7.sp)
 )
 @Composable fun JamesTheme(theme: String,content: @Composable ()->Unit) {MaterialTheme(colorScheme=if(theme=="dark"||(theme=="system"&&isSystemInDarkTheme()))dark else light,typography=jamesTypography,shapes=Shapes(extraSmall=RoundedCornerShape(10.dp),small=RoundedCornerShape(14.dp),medium=RoundedCornerShape(18.dp),large=RoundedCornerShape(24.dp),extraLarge=RoundedCornerShape(30.dp)),content=content)}
-@Composable fun JamesCard(title: String,tag: String?=null,content: @Composable ColumnScope.()->Unit) {Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(22.dp),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface),border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {Column(Modifier.padding(horizontal=20.dp,vertical=19.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){Row(verticalAlignment=androidx.compose.ui.Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)){Box(Modifier.width(4.dp).height(23.dp).background(MaterialTheme.colorScheme.primary,RoundedCornerShape(8.dp)));Text(title,style=MaterialTheme.typography.titleLarge)};if(tag!=null)Text(tag.uppercase(),color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.labelSmall,letterSpacing=1.sp);content()}}}
+@Composable fun JamesCard(title: String,tag: String?=null,onClick:(()->Unit)?=null,content: @Composable ColumnScope.()->Unit) {
+    Card(
+        Modifier.fillMaxWidth().then(if(onClick==null) Modifier else Modifier.clickable(onClick=onClick)),
+        shape=RoundedCornerShape(22.dp),
+        colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface),
+        border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Column(Modifier.padding(horizontal=20.dp,vertical=19.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment=androidx.compose.ui.Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                Box(Modifier.width(4.dp).height(23.dp).background(MaterialTheme.colorScheme.primary,RoundedCornerShape(8.dp)))
+                Text(title,style=MaterialTheme.typography.titleLarge)
+            }
+            if(tag!=null)Text(tag.uppercase(),color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.labelSmall,letterSpacing=1.sp)
+            content()
+        }
+    }
+}
 @Composable fun Muted(text: String){Text(text,color=MaterialTheme.colorScheme.onSurfaceVariant,style=MaterialTheme.typography.bodyMedium)}
 @Composable fun PageTitle(title: String,eyebrow: String=""){Column(verticalArrangement=Arrangement.spacedBy(7.dp)){if(eyebrow.isNotBlank())Text(eyebrow.uppercase(),color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.labelSmall,letterSpacing=1.5.sp);Text(title,style=MaterialTheme.typography.headlineLarge)}}
 /**
