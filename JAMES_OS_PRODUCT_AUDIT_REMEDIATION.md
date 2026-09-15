@@ -8,16 +8,16 @@
 | Finding | Before | After | Status / evidence |
 |---|---|---|---|
 | Health Connect parity | HRV, oxygen saturation and respiratory-rate reads could not all be declared/requested | Single `HealthCapabilities` mapping supplies reads, runtime permissions and manifest declarations | Resolved; static parity test |
-| Backup safety | Generic backup included rows but semantic coverage was weakly tested | Round-trip fixtures include visits, correction evidence, places, ownership, context, activity, interruption, routines, journal, check-in, settings and calibration | Resolved for persisted rows; Import Centre remains the only format |
-| Visit merge evidence | Merge deleted the source Visit | Source is superseded, raw snapshots and reversible correction records retained | Resolved; correction/backup test |
+| Backup safety | Generic backup included rows but semantic coverage was weakly tested | Semantic interval shapes are validated; a populated semantic export imports into a clean state and a repeat import is idempotent | Resolved for persisted rows; Import Centre remains the only format |
+| Visit merge evidence | Merge deleted the source Visit | Source is superseded, raw snapshots and reversible correction records retained; merge/split corrections can be reverted without deleting evidence | Resolved; correction/backup test |
 | Legacy visit migration | Full legacy scan at every startup | Versioned watermark: first run/import reconciliation scans; normal startup requests only later evidence | Resolved; deterministic policy test |
-| Semantic records | Quick actions created disconnected/ambiguous records | Context, activity, ownership and interruption retain anchor/James-Day/context links while staying separate dimensions | Partially resolved; historical legacy rows remain compatibility data |
+| Semantic records | Quick actions created disconnected/ambiguous records | New Context, Activity, Ownership and Interruption rows attach to the live location anchor; the completed Visit retains that anchor ID. Legacy rows use a bounded compatibility join only | Resolved for current writes; historical legacy rows remain compatibility data |
 | Ownership truth | No-obligation/activity/place could be misread as Personal | Explicit `OwnershipPeriod` ledger remains authoritative; Unknown is first class and coverage is calculated | Resolved for current semantic records |
 | Life Balance | Could confuse no evidence with zero Personal time | Uses ownership ledger, evidence gate and coverage language | Resolved for current-day output |
-| Timeline day model | Calendar date route could diverge from James Day; linked rows were separate moments | Timeline uses selected James-Day bounds and narrates contained Context/Activity/Ownership/Interruption evidence inside the Visit | Resolved; needs real-device cross-midnight confirmation |
+| Timeline day model | Calendar date route could diverge from James Day; linked rows were separate moments | Timeline uses one pure James-Day filter and narrates explicitly linked Context/Activity/Ownership/Interruption evidence inside the Visit | Resolved; cross-midnight regression test |
 | Unknown review | Unclear how to correct uncertain places/time | Places offers bounded unresolved Visit ownership review with one-tap classifications | Resolved for ownership; broader retrospective review is deferred |
 | Map repeated pins | Repeated visits stacked on a point | Co-located Visit pins group into a review entry; map remains pin-based, no route trail | Resolved |
-| Provider freshness | Connected status could be interpreted as fresh evidence | Connections and diagnostics distinguish not-synced, fresh, aging and stale successful syncs | Resolved; source metrics retain their own freshness policy |
+| Provider freshness/reconciliation | Connected status could be interpreted as fresh evidence and source ranking was repeated | Connections and diagnostics distinguish not-synced, fresh, aging and stale; `SourcePolicy.rank` now supplies one display priority for equivalent provider metrics | Resolved; source metrics retain their own freshness policy |
 | Nova | Prominent but no provider existed | Removed from primary navigation; implementation retained but not presented as working | Resolved |
 
 ## Authoritative semantic policy
@@ -39,6 +39,6 @@
 - Nova/provider integration and notification intelligence.
 - Shift Tracker sender Part 2.
 
-## Remaining acceptance focus
+## Acceptance focus
 
-The semantic foundation is implemented, but it still needs James's populated-device acceptance for cross-midnight Timeline grouping, correction ergonomics and provider freshness wording. Those are validation/targeted follow-up risks, not permission to reintroduce broad record observation or fabricate ownership evidence.
+The remaining work is real-device confirmation rather than another code path: exercise correction reversal, an overnight James Day and provider freshness wording on a populated installation. These are acceptance checks, not permission to reintroduce broad record observation or fabricate ownership evidence.

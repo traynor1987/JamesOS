@@ -289,3 +289,10 @@ Settings is a directory, not a second dashboard. The Settings home uses concise 
 
 - Timeline is a bounded **James Day** presentation. A completed Visit now narrates linked `ContextPeriod`, `LifeFactActivity`, `OwnershipPeriod` and `VisitInterruption` evidence inside its visit card, while the stored records remain independently editable and exported. Do not delete raw semantic rows merely to keep Timeline quiet.
 - Provider connection and evidence freshness are distinct. Connections/Data status now explicitly says `NOT SYNCED`, `FRESH`, `AGING` or `STALE` for the latest successful Health Connect/WHOOP sync; a connected provider is not automatically current evidence. Metric-level physiology freshness remains the stronger algorithm input policy.
+## Product audit remediation continuation (2026-09-15)
+
+The P0/P1/P2 remediation now uses a stricter semantic contract. New Context, Activity, OwnershipPeriod and VisitInterruption records attach to the live `LocationAnchor`; a completed `PlaceVisit` retains that `anchorId`, so Timeline joins a Visit through evidence rather than merely coincident timestamps. Unlinked legacy rows retain a bounded compatibility join and are never rewritten as new subjective truth.
+
+Visit merge/split is non-destructive: snapshots and corrections remain backed up, and the Visit editor can revert the latest merge/split correction by restoring its evidence rather than deleting rows. Import validation now checks semantic interval/enumeration shapes; populated semantic export → clean import → repeat import is regression-tested for idempotence.
+
+Timeline now calls one pure James-Day filter with an overnight test. Provider display selection now calls `SourcePolicy.rank`, keeping WHOOP/Health Connect/Wear fallback order consistent while raw provider records remain preserved. Do not reintroduce a full-history reactive query, startup-wide legacy reconstruction, or a location breadcrumb trail.
