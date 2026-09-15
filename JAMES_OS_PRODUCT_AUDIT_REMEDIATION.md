@@ -14,9 +14,10 @@
 | Semantic records | Quick actions created disconnected/ambiguous records | Context, activity, ownership and interruption retain anchor/James-Day/context links while staying separate dimensions | Partially resolved; historical legacy rows remain compatibility data |
 | Ownership truth | No-obligation/activity/place could be misread as Personal | Explicit `OwnershipPeriod` ledger remains authoritative; Unknown is first class and coverage is calculated | Resolved for current semantic records |
 | Life Balance | Could confuse no evidence with zero Personal time | Uses ownership ledger, evidence gate and coverage language | Resolved for current-day output |
-| Timeline day model | Calendar date route could diverge from James Day | Timeline uses selected James-Day bounds with bounded neighbouring sleep context | Resolved; needs real-device cross-midnight confirmation |
+| Timeline day model | Calendar date route could diverge from James Day; linked rows were separate moments | Timeline uses selected James-Day bounds and narrates contained Context/Activity/Ownership/Interruption evidence inside the Visit | Resolved; needs real-device cross-midnight confirmation |
 | Unknown review | Unclear how to correct uncertain places/time | Places offers bounded unresolved Visit ownership review with one-tap classifications | Resolved for ownership; broader retrospective review is deferred |
 | Map repeated pins | Repeated visits stacked on a point | Co-located Visit pins group into a review entry; map remains pin-based, no route trail | Resolved |
+| Provider freshness | Connected status could be interpreted as fresh evidence | Connections and diagnostics distinguish not-synced, fresh, aging and stale successful syncs | Resolved; source metrics retain their own freshness policy |
 | Nova | Prominent but no provider existed | Removed from primary navigation; implementation retained but not presented as working | Resolved |
 
 ## Authoritative semantic policy

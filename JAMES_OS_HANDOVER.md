@@ -284,3 +284,8 @@ Settings is a directory, not a second dashboard. The Settings home uses concise 
 - New Context and Activity actions write their own canonical semantic records and attach the current anchor/context/James Day where available. Context means situation; Activity means what James did; neither writes Personal ownership. The primary Nova tab was removed because no provider is configured.
 - Ownership coverage is explicit alongside the canonical ownership ledger. Life Balance and Today use that shared ledger and must retain `UNKNOWN != zero` / `no evidence != low Personal time` behaviour.
 - Current deferred work remains: adaptive Wear detailed sampling, Calendar/weather/screen time, Time Ownership trends/correlations, predictive alerts, Nova AI and Shift Tracker sender Part 2. None are authorised as a substitute for validating this foundation on a populated device.
+
+### Narrative and freshness continuation
+
+- Timeline is a bounded **James Day** presentation. A completed Visit now narrates linked `ContextPeriod`, `LifeFactActivity`, `OwnershipPeriod` and `VisitInterruption` evidence inside its visit card, while the stored records remain independently editable and exported. Do not delete raw semantic rows merely to keep Timeline quiet.
+- Provider connection and evidence freshness are distinct. Connections/Data status now explicitly says `NOT SYNCED`, `FRESH`, `AGING` or `STALE` for the latest successful Health Connect/WHOOP sync; a connected provider is not automatically current evidence. Metric-level physiology freshness remains the stronger algorithm input policy.
