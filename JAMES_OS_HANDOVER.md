@@ -220,7 +220,7 @@ Implemented guardrails:
 - Existing persistence equality/fingerprint guards for Body Battery, Right Now and wellbeing remain required. Do not reintroduce timestamp-only derived writes or a broad reactive `SELECT *`.
 - Empty history now stays `Life Balance: LEARNING/UNKNOWN` without claiming **Hurting: Low personal time**. The warning requires recorded context evidence. It does not alter populated-data scoring.
 
-Regression coverage includes parse-once identity and empty-history Life Balance assertions. The public static gates (`public_repo_gate.py`, `audit_native.py`) passed locally. This Work environment has no Gradle binary, wrapper or Android SDK, so Android compilation/test execution must be confirmed by the public GitHub validation workflow after push; do not treat that limitation as an application failure.
+Regression coverage includes parse-once identity and empty-history Life Balance assertions. The public static gates (`public_repo_gate.py`, `audit_native.py`) passed locally. GitHub Actions run **#17** (`34947687540`) passed both the complete public unit/lint/phone-build validation and targeted emulator instrumentation on 2026-09-15. This Work environment has no Gradle binary, wrapper or Android SDK, so GitHub Actions remains the authoritative Android execution evidence.
 
 The prior regular validation failure was repository workflow setup, before tests: both jobs failed at the pinned `android-actions/setup-android` step. The successful signed release used the runner's existing `$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager`; public validation now uses that same explicit license/platform setup. Tests remain enabled and unchanged.
 
