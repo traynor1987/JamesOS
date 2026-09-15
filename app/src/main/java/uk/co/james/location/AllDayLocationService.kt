@@ -10,6 +10,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.*
 import kotlinx.coroutines.*
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.flow.first
 import uk.co.james.JamesApplication
 import uk.co.james.MainActivity
@@ -57,6 +58,10 @@ class AllDayLocationService:Service() {
             .setMinUpdateIntervalMillis(5*60*1000L).setMaxUpdateDelayMillis(5*60*1000L).build()
         client.removeLocationUpdates(callback)
         client.requestLocationUpdates(request,callback,Looper.getMainLooper())
+        // A five-minute interval must not also mean "blank map for five minutes".
+        // The last fix is only a current-position/confirming anchor; it never makes
+        // a completed visit by itself.
+        scope.launch { runCatching { client.lastLocation.await()?.let { VisitRecorder.record(application as JamesApplication,it) } } }
         return START_STICKY
     }
     override fun onDestroy(){if(::client.isInitialized)client.removeLocationUpdates(callback);scope.cancel();super.onDestroy()}
@@ -82,13 +87,19 @@ private object VisitRecorder {
         val distance=FloatArray(1).also {Location.distanceBetween(d.number("latitude"),d.number("longitude"),point.latitude,point.longitude,it)}
         if(sameVisit(distance[0],point.accuracy,d.number("accuracy",100.0).toFloat())) {
             val samples=d.number("samples",1.0).toInt().coerceAtLeast(1)
+            val place=nearestPlace(app,point)
+            val minutes=visitMinutes(Instant.parse(d.text("start")),at)
             val data=d.changed(
                 "latitude" to p((d.number("latitude")*samples+point.latitude)/(samples+1)),
                 "longitude" to p((d.number("longitude")*samples+point.longitude)/(samples+1)),
                 "accuracy" to p(point.accuracy),
                 "lastSeen" to p(at.toString()),
                 "samples" to p(samples+1),
-                "durationMin" to p(visitMinutes(Instant.parse(d.text("start")),at))
+                "durationMin" to p(minutes),
+                "visitState" to p(if(completedVisit(minutes)) "ACTIVE" else "CONFIRMING"),
+                "placeId" to p(place?.recordId?:d.text("placeId")),
+                "placeName" to p(place?.data()?.text("title")?:d.text("placeName","Unknown place")),
+                "placeConfidence" to p(if(place==null)d.text("placeConfidence","LOW") else "MEDIUM")
             )
             app.repository.save("personalRecords",personal("LocationAnchor",data,ANCHOR,"gps",d.text("start")))
         } else {
@@ -109,7 +120,7 @@ private object VisitRecorder {
             "accuracy" to p(point.accuracy),"samples" to p(1),"durationMin" to p(0),
             "ownership" to p(inferredOwnership().name),"ownershipSource" to p("INFERRED"),"movement" to p("Stationary"),
             "placeId" to p(place?.recordId?:""),"placeName" to p(place?.data()?.text("title")?:"Unknown place"),
-            "placeConfidence" to p(if(place==null)"LOW" else "MEDIUM")
+            "placeConfidence" to p(if(place==null)"LOW" else "MEDIUM"),"visitState" to p("CONFIRMING")
         ),ANCHOR,"gps",at.toString()))
     }
     private suspend fun nearestPlace(app:JamesApplication,point:Location):uk.co.james.database.StoredRecord? =

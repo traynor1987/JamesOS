@@ -27,6 +27,10 @@ class VisitTrackerTest {
         assertFalse(shouldCloseAnchor(last,Instant.parse("2026-09-10T10:05:00Z"),false))
         assertTrue(shouldCloseAnchor(last,Instant.parse("2026-09-10T10:11:00Z"),false))
     }
+    @Test fun one_initial_and_one_five_minute_fix_are_enough_to_activate_a_visit() {
+        val start=Instant.parse("2026-09-10T10:00:00Z")
+        assertTrue(completedVisit(visitMinutes(start,Instant.parse("2026-09-10T10:05:00Z"))))
+    }
     @Test fun overlapping_places_choose_the_closest_eligible_boundary() {
         val far=PlaceMatch("a","A","Home",120f,100f)
         val near=PlaceMatch("b","B","Work",50f,100f)

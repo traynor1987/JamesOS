@@ -13,6 +13,8 @@ import uk.co.james.location.LocationSource
 import uk.co.james.nutrition.NutritionHealthSource
 import uk.co.james.sync.BackgroundJobs
 import uk.co.james.work.WorkContextProvider
+import kotlinx.coroutines.*
+import uk.co.james.location.reconstructLegacyVisits
 class JamesApplication : Application() {
     val database by lazy { Room.databaseBuilder(this,JamesDatabase::class.java,"james-native.db").addMigrations(MIGRATION_1_2,MIGRATION_2_3,MIGRATION_3_4,MIGRATION_4_5).build() }
     val repository by lazy { JamesRepository(this,database) }
@@ -23,5 +25,5 @@ class JamesApplication : Application() {
     val location by lazy { LocationSource(this,repository,preferences) }
     val wear by lazy { uk.co.james.wear.WearCompanion(this) }
     val work by lazy { WorkContextProvider(this,repository) }
-    override fun onCreate() {super.onCreate();BackgroundJobs.schedule(this);if(whoop.configured())BackgroundJobs.scheduleWhoop(this)}
+    override fun onCreate() {super.onCreate();BackgroundJobs.schedule(this);if(whoop.configured())BackgroundJobs.scheduleWhoop(this);CoroutineScope(SupervisorJob()+Dispatchers.IO).launch {runCatching {repository.reconstructLegacyVisits()}}}
 }

@@ -42,13 +42,15 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
     val route=saved.getStateFlow("route","Today")
     val tab=saved.getStateFlow("tab","Today")
     val date=saved.getStateFlow("date",today())
+    val locationMapRange=saved.getStateFlow("location-map-range",1)
     /** Only the visible route observes its semantic time window.  The 40 day
      * scoring window remains bounded; Timeline never wakes up the whole history. */
-    val screenRecords=combine(route,date) { screen, selected -> screen to selected }
-        .flatMapLatest { (screen,selected) ->
+    val screenRecords=combine(route,date,locationMapRange) { screen, selected, mapRange -> Triple(screen,selected,mapRange) }
+        .flatMapLatest { (screen,selected,mapRange) ->
             if (screen in setOf("Location","Location map")) {
                 val end=java.time.LocalDate.parse(selected).plusDays(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant()
-                return@flatMapLatest repo.dao.observePlacesContext(end.minus(java.time.Duration.ofDays(if(screen=="Location map") 7 else 2)).toString(),end.toString())
+                val days=if(screen=="Location map") mapRange.toLong() else 14L
+                return@flatMapLatest repo.dao.observePlacesContext(end.minus(java.time.Duration.ofDays(days)).toString(),end.toString())
             }
             val selectedDay=runCatching { java.time.LocalDate.parse(selected) }.getOrElse { java.time.LocalDate.now() }
             val days=when(screen) { "Timeline" -> 1L; "Insights", "Weekly review" -> 8L; "Me" -> 90L; else -> 40L }
@@ -81,6 +83,7 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
     fun action(job:suspend ()->Unit) {if(!busy.compareAndSet(false,true))return;viewModelScope.launch {try{job()}catch(e:CancellationException){throw e}catch(e:Exception){message.value=e.message?:"The change could not be saved."}finally{busy.value=false}}}
     fun navigate(value: String,main: Boolean=false) {saved["route"]=value;if(main)saved["tab"]=value}
     fun date(value: String) {if(validDate(value))saved["date"]=value}
+    fun locationMapRange(days:Int) { if(days in setOf(1,2,7)) saved["location-map-range"]=days }
     fun close() {saved["dialog"]="";saved["draft"]="{}";saved["editor-original"]="";saved["editor-store"]=""}
     fun open(kind: String,entry: StoredRecord?=null) {
         saved["dialog"]=kind;saved["editor-original"]=entry?.rawJson?:"";saved["editor-store"]=entry?.store?:if(kind=="Template")"eventTemplates" else if(kind=="RutEvent")"loggedEvents" else if(kind=="Note")"dailyNotes" else if(kind=="WeekReflection")"metadata" else "personalRecords"

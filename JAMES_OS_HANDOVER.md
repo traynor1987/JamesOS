@@ -224,6 +224,15 @@ Regression coverage includes parse-once identity and empty-history Life Balance 
 
 The prior regular validation failure was repository workflow setup, before tests: both jobs failed at the pinned `android-actions/setup-android` step. The successful signed release used the runner's existing `$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager`; public validation now uses that same explicit license/platform setup. Tests remain enabled and unchanged.
 
+## Places/Visits real-device correction (post 0.3.211)
+
+0.3.211 real-device acceptance exposed two genuine gaps: its Places UI showed only new `PlaceVisit` rows, so pre-existing bounded `ContextPeriod` evidence was invisible as recent visits; and map centring relied on its first marker rather than explicitly framing the latest device anchor. Saved `Place` definitions, legacy context evidence and new Visit rows are separate datasets and must stay separate.
+
+- `reconstructLegacyVisits()` performs an idempotent, specific-kind compatibility pass for bounded legacy `ContextPeriod`/location evidence. It creates deterministic `legacy-visit:*` Visit IDs only when start, end and at least five minutes of duration already exist; raw legacy evidence is retained. Reconstructed rows carry `LEGACY_RECONSTRUCTION` provenance and do not fabricate coordinates when old evidence had none.
+- The active `LocationAnchor` is now explicit `CONFIRMING` then `ACTIVE` after the first start plus five-minute stable sample. A service start immediately uses the latest valid device fix for the physical current-position anchor; that alone never creates a completed visit. Current coordinates remain visible when no Place matches.
+- The map is bounded-range (Today, Yesterday, seven days), visit/pin based and intentionally has no breadcrumb/route line. It frames current location plus the selected visits, keeps known-place definitions visually distinct from actual visits, exposes a compact legend, and opens Visit details from visit pins. Do not reintroduce raw route rendering.
+- Places and Map use the same scoped `PlaceVisit` truth. Current anchors and saved places are small scoped reads; no whole-history Flow or historical visit replay runs on a live GPS fix.
+
 The immediate priority remains proving this on a mature synthetic Room dataset/device and keeping all semantic windows explicit. Do not start Shift Tracker Part 2, maps, timers, settings redesign, Wear sampling, stress calibration UI, Time Ownership, new wellbeing features or unrelated polish before that validation is complete.
 
 
