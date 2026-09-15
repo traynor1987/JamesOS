@@ -23,14 +23,22 @@ import uk.co.james.calibration.*
 import java.io.File
 
 data class PlaceCalibrationUiState(val title:String,val detail:String,val inProgress:Boolean)
-data class RouteRecordsState(val records:List<StoredRecord>,val loaded:Boolean)
+data class RouteRecordsState(val key:String,val records:List<StoredRecord>,val loaded:Boolean)
 data class HistoryReadiness(val loaded:Boolean,val hasUserHistory:Boolean)
+data class CurrentHealthInputsReadiness(val loaded:Boolean)
+
+/** A route result is valid only for the exact route/date/range request which
+ * produced it.  Bottom navigation changes synchronously, while Room's new
+ * query emits asynchronously; without this identity a new screen could briefly
+ * render the previous screen's data as if it were its own. */
+internal fun routeRequestKey(route:String,date:String,mapRange:Int)="$route|$date|$mapRange"
+internal fun RouteRecordsState.matches(requestKey:String)=key==requestKey
 
 /** Route changes must expose an explicit loading boundary instead of allowing
  * a destination to reuse the previous destination's bounded Room snapshot. */
-internal fun routeRecords(query:Flow<List<StoredRecord>>):Flow<RouteRecordsState> = flow {
-    emit(RouteRecordsState(emptyList(),false))
-    emitAll(query.map {RouteRecordsState(it,true)})
+internal fun routeRecords(key:String,query:Flow<List<StoredRecord>>):Flow<RouteRecordsState> = flow {
+    emit(RouteRecordsState(key,emptyList(),false))
+    emitAll(query.map {RouteRecordsState(key,it,true)})
 }
 
 class JamesViewModel(application: Application,private val saved: SavedStateHandle): AndroidViewModel(application) {
@@ -41,8 +49,15 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
     val records=repo.records.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),emptyList())
     val wellbeingSettings=app.preferences.wellbeing.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),uk.co.james.settings.WellbeingSettings())
     val energyTimeSettings=app.preferences.energyTime.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),uk.co.james.settings.EnergyTimeSettings())
-    private val stateRecords=repo.dao.observeStateInputs(java.time.Instant.now().minus(java.time.Duration.ofDays(40)).toString())
+    private val stateRecordsSnapshot=flow {
+        emit(RouteRecordsState("current-health",emptyList(),false))
+        emitAll(repo.dao.observeStateInputs(java.time.Instant.now().minus(java.time.Duration.ofDays(40)).toString())
+            .map { RouteRecordsState("current-health",it,true) })
+    }.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),RouteRecordsState("current-health",emptyList(),false))
+    private val stateRecords=stateRecordsSnapshot.map {it.records}
         .stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),emptyList())
+    val currentHealthInputsReadiness=stateRecordsSnapshot.map {CurrentHealthInputsReadiness(it.loaded)}
+        .stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),CurrentHealthInputsReadiness(false))
     val historyReadiness=repo.dao.observeHasUserHistory().map {HistoryReadiness(true,it)}
         .stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),HistoryReadiness(false,false))
     val wellbeing=combine(stateRecords,wellbeingSettings) { rows, settings->uk.co.james.state.mentalWellbeing(rows,settings) }.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),MentalWellbeingSummary(today(),uk.co.james.state.WellbeingOutput(0,"VERY LOW","LEARNING", "LEARNING",emptyList()),uk.co.james.state.WellbeingOutput(0,"VERY LOW","LEARNING","LEARNING",emptyList()),uk.co.james.state.WellbeingOutput(50,"OKAY","LEARNING","LEARNING",emptyList()),0,0,0,0,0))
@@ -60,12 +75,15 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
     val locationMapRange=saved.getStateFlow("location-map-range",1)
     /** Only the visible route observes its semantic time window.  The 40 day
      * scoring window remains bounded; Timeline never wakes up the whole history. */
+    val screenRequestKey=combine(route,date,locationMapRange) { screen, selected, mapRange -> routeRequestKey(screen,selected,mapRange) }
+        .stateIn(viewModelScope,SharingStarted.Eagerly,routeRequestKey("Today",today(),1))
     val screenRecords=combine(route,date,locationMapRange) { screen, selected, mapRange -> Triple(screen,selected,mapRange) }
         .flatMapLatest { (screen,selected,mapRange) ->
+            val requestKey=routeRequestKey(screen,selected,mapRange)
             if (screen in setOf("Location","Location map")) {
                 val end=java.time.LocalDate.parse(selected).plusDays(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant()
                 val days=if(screen=="Location map") mapRange.toLong() else 14L
-                return@flatMapLatest routeRecords(repo.dao.observePlacesContext(end.minus(java.time.Duration.ofDays(days)).toString(),end.toString()))
+                return@flatMapLatest routeRecords(requestKey,repo.dao.observePlacesContext(end.minus(java.time.Duration.ofDays(days)).toString(),end.toString()))
             }
             val selectedDay=runCatching { java.time.LocalDate.parse(selected) }.getOrElse { java.time.LocalDate.now() }
             val days=when(screen) { "Timeline" -> 3L; "Insights", "Weekly review" -> 8L; "Me" -> 90L; else -> 40L }
@@ -73,11 +91,13 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
             // date in order to resolve the actual James Day, not a whole history.
             val start=if(screen=="Timeline") selectedDay.minusDays(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant() else selectedDay.minusDays(days-1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant()
             val end=if(screen=="Timeline") selectedDay.plusDays(2).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant() else java.time.Instant.now().plus(java.time.Duration.ofMinutes(5))
-            routeRecords(repo.dao.observeRouteWindow(start.toString(),end.toString()))
-        }.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),RouteRecordsState(emptyList(),false))
+            routeRecords(requestKey,repo.dao.observeRouteWindow(start.toString(),end.toString()))
+        }.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),RouteRecordsState("",emptyList(),false))
     val dialog=saved.getStateFlow("dialog","")
     val draft=saved.getStateFlow("draft","{}")
     val message=MutableStateFlow("")
+    val todayPreparationRetry=MutableStateFlow(0)
+    val localCrashReport=MutableStateFlow(app.crashDiagnostics.read())
     val busy=MutableStateFlow(false)
     val placeCalibration=MutableStateFlow<PlaceCalibrationUiState?>(null)
     val plan=MutableStateFlow<ImportPlan?>(null)
@@ -113,7 +133,10 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
             throw e
         }
     }
-    fun navigate(value: String,main: Boolean=false) {saved["route"]=value;if(main)saved["tab"]=value}
+    fun navigate(value: String,main: Boolean=false) {app.crashDiagnostics.setRoute(value);saved["route"]=value;if(main)saved["tab"]=value}
+    fun recordUiPhase(phase:String) { app.crashDiagnostics.setUiPhase(phase) }
+    fun retryTodayPreparation() { todayPreparationRetry.value++ }
+    fun clearLocalCrashReport() { app.crashDiagnostics.clear();localCrashReport.value=null }
     fun date(value: String) {if(validDate(value))saved["date"]=value}
     fun locationMapRange(days:Int) { if(days in setOf(1,2,7)) saved["location-map-range"]=days }
     fun close() {saved["dialog"]="";saved["draft"]="{}";saved["editor-original"]="";saved["editor-store"]=""}

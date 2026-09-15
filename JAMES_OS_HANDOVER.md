@@ -315,6 +315,15 @@ The neutral 50/35/50/20-style values produced by Right Now and wellbeing engines
 
 Insights diagnostics no longer construct a single unbounded `Inputs used` string on route entry. It shows count/latest input first, then at most the newest twelve rows on explicit request. This is deliberately a separate UX/performance guard; do not state that it was the crash root without an Android stack trace. `RouteRecordsStateTest`, `EvidenceReadinessTest`, and `WellbeingDiagnosticsPresentationTest` protect the transition, prior boundary and bounded diagnostics.
 
+### Real-device Insights → Today failure follow-up (2026-09-15)
+
+The `Insights → Today` crash still reproduced on a Galaxy Fold release build after the first loading/prior presentation change. That real-device result supersedes CI. The previous work did **not** establish a stack trace or a proven root cause.
+
+- A route result now carries a request identity (`route|date|range`). `JamesRoot` accepts rows only when the identity matches the currently requested screen. This prevents a synchronous bottom-nav route change from briefly treating an **Insights** bounded snapshot as loaded **Today** data while Today’s Room query is still starting.
+- Today waits for both its visible route window and the independent bounded current-health input window before preparing state. This preserves the improved **Preparing current health context** UI without hiding or dropping persisted evidence. Preparation is exception-safe: an invalid/unexpected persisted row shows a recoverable retry card instead of crashing the process or spinning forever.
+- `LocalCrashDiagnostics` is a local-only beta fallback when the release-path exception cannot be reproduced in CI. The default uncaught-exception handler records only exception type/message, James OS stack frames, route transition, UI phase, app version and Room schema. It intentionally excludes health values, location, notes, provider payloads and credentials. The report survives restart and is visible/clearable at **Settings → Advanced & Diagnostics**; it is never uploaded.
+- `RouteRecordsStateTest` now explicitly covers the Insights → Today hand-off; `StateEngineTest` proves identical immutable persisted evidence gives identical wellbeing output after process recreation. These tests do not substitute for the next real-device reproduction/report.
+
 ### Narrative and freshness continuation
 
 - Timeline is a bounded **James Day** presentation. A completed Visit now narrates linked `ContextPeriod`, `LifeFactActivity`, `OwnershipPeriod` and `VisitInterruption` evidence inside its visit card, while the stored records remain independently editable and exported. Do not delete raw semantic rows merely to keep Timeline quiet.

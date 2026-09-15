@@ -87,6 +87,23 @@ class StateEngineTest {
         assertTrue(stored.all {it.jsonObject.text("targetScore")=="LOW_MOOD_LOAD"})
     }
 
+    @Test fun identicalPersistedEvidenceProducesIdenticalWellbeingAfterProcessRecreation() {
+        val rows=(1L..8L).flatMap {day->
+            val at=clock.minus(Duration.ofDays(day))
+            listOf(
+                wellbeingMetric("Sleep",420.0,at),wellbeingMetric("Recovery",65.0,at),
+                wellbeingMetric("HRV",62.0,at),wellbeingMetric("Resting heart rate",61.0,at),
+                wellbeingMetric("James Stress",18.0,at)
+            )
+        }
+        val first=mentalWellbeing(rows,clock=clock,zone=zone)
+        // This is the same immutable Room snapshot a recreated process receives.
+        val recreated=mentalWellbeing(rows.map {it.copy()},clock=clock,zone=zone)
+        assertEquals(first.anxiety.score,recreated.anxiety.score)
+        assertEquals(first.lowMood.score,recreated.lowMood.score)
+        assertEquals(first.reserve.score,recreated.reserve.score)
+    }
+
     @Test fun wellbeingUsesNewestSameDayStressInput() {
         val base=Instant.parse("2026-09-11T12:00:00Z")
         fun metric(name:String,value:Double,at:Instant)=StoredRecord.from("personalRecords",personal("HealthMetric",fields("metric" to p(name),"value" to p(value)),"${name}-${at.epochSecond}","wear",at.toString()).changed("updatedAt" to p(at.toString())))

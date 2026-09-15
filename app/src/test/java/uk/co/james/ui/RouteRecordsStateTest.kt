@@ -14,10 +14,20 @@ import uk.co.james.database.StoredRecord
 class RouteRecordsStateTest {
     @Test fun destinationTransitionStartsLoadingBeforePublishingItsOwnSnapshot() = runBlocking {
         val row=StoredRecord.from("personalRecords",fields("kind" to p("HealthMetric")))
-        val states=routeRecords(flowOf(listOf(row))).toList()
+        val states=routeRecords("Today|2026-09-15|1",flowOf(listOf(row))).toList()
         assertFalse(states.first().loaded)
         assertTrue(states.first().records.isEmpty())
         assertTrue(states.last().loaded)
         assertEquals(listOf(row),states.last().records)
+    }
+
+    @Test fun insightsSnapshotIsNeverAcceptedAsTodayDataDuringBottomNavHandoff() {
+        val insights=RouteRecordsState("Insights|2026-09-15|1",emptyList(),true)
+        val todayKey=routeRequestKey("Today","2026-09-15",1)
+        val todayLoading=RouteRecordsState(todayKey,emptyList(),false)
+        val todayReady=RouteRecordsState(todayKey,emptyList(),true)
+        assertFalse(insights.matches(todayKey))
+        assertFalse(todayLoading.loaded&&todayLoading.matches(todayKey))
+        assertTrue(todayReady.loaded&&todayReady.matches(todayKey))
     }
 }

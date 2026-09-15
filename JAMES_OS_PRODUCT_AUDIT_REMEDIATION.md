@@ -20,8 +20,8 @@
 | Save current Place calibration | A low-power/balanced fused fix up to ±200m could fail with the misleading instruction to “try outdoors” | Existing timeline anchors are reused only when fresh (≤1 minute) and accurate (≤±30m); otherwise one explicit high-accuracy Fused fix is requested, then accepted/rejected with the actual age/accuracy/provider reason | Resolved in code; deterministic calibration-policy tests cover stale, inaccurate, timeout, provider failure and fresh-anchor cases |
 | Provider freshness/reconciliation | Connected status could be interpreted as fresh evidence and source ranking was repeated | Connections and diagnostics distinguish not-synced, fresh, aging and stale; `SourcePolicy.rank` now supplies one display priority for equivalent provider metrics | Resolved; source metrics retain their own freshness policy |
 | Nova | Prominent but no provider existed | Preserved as deferred code but absent from the stable five-destination navigation; Settings now opens the existing Settings directory | Resolved; `JamesPrimaryNavigation` contract test |
-| Route hand-off / cold start | A route could reuse the previous bounded snapshot while its own Room query was changing; an unloaded empty list looked like an empty install | Each route now emits explicit loading before its own scoped query, and Today waits for a cheap history readiness result | Resolved in code; route-state regression test and Android validation #62 |
-| Prior/default truth | Neutral algorithm priors could be rendered as current wellbeing and could be persisted after metadata-only startup | Evidence gates keep priors internal until measured/provider/manual evidence exists; metadata/calibration alone cannot write derived wellbeing/right-now state | Resolved in code; evidence-readiness regression tests and Android validation #62 |
+| Route hand-off / cold start | A route could reuse the previous bounded snapshot while its own Room query was changing; an unloaded empty list looked like an empty install | Each route now emits explicit loading before its own scoped query, and Today waits for history **and** current-health input readiness. Route snapshots carry a request identity, so Today cannot consume Insights data during the hand-off. | Partially resolved pending real-device confirmation; the original release crash was not stack-traced |
+| Prior/default truth | Neutral algorithm priors could be rendered as current wellbeing and could be persisted after metadata-only startup | Evidence gates keep priors internal until measured/provider/manual evidence exists; metadata/calibration alone cannot write derived wellbeing/right-now state. Preparation waits for persisted inputs and fails recoverably. | Resolved in code; evidence-readiness/process-recreation tests; real-device final values still require confirmation |
 | Insights diagnostics volume | Route entry constructed one raw string containing every Anxiety input timestamp | Diagnostics now display count/latest first and show only a bounded newest twelve rows on demand | Resolved; bounded-presentation regression test |
 
 ## Authoritative semantic policy
@@ -42,6 +42,10 @@
 - Time-ownership correlations/trends, weekly review, predictions/anomaly alerts.
 - Nova/provider integration and notification intelligence.
 - Shift Tracker sender Part 2.
+
+## Real-device crash evidence policy
+
+The Fold **Insights → Today** crash remained present in the earlier signed build despite green CI. Do not declare it fixed from emulator/unit success alone. `LocalCrashDiagnostics` now preserves a privacy-safe local report (exception type/message, James frames, route/previous route, UI phase, app/database version) under **Settings → Advanced & Diagnostics** after a crash; it contains no personal data and is not uploaded. The next signed candidate must be reproduced on the phone and, if it still fails, that report is the required evidence for the next fix.
 
 ## Acceptance focus
 

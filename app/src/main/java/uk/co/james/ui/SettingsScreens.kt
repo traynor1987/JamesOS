@@ -81,10 +81,22 @@ internal fun providerSyncStatus(stamp:String,now:Instant=Instant.now()):String {
     {UpdateSettingsCard(vm,install)}
 ),keys=listOf("app-title","updates"))
 
-@Composable fun DiagnosticsSettingsScreen(vm:JamesViewModel) = AdaptiveCards(listOf(
-    {PageTitle("Advanced & Diagnostics","TECHNICAL STATUS")},
-    {DataStatusCard(vm)}
-),keys=listOf("diagnostics-title","data-status"))
+@Composable fun DiagnosticsSettingsScreen(vm:JamesViewModel) {
+    val crash by vm.localCrashReport.collectAsStateWithLifecycle()
+    AdaptiveCards(listOfNotNull(
+        {PageTitle("Advanced & Diagnostics","TECHNICAL STATUS")},
+        {DataStatusCard(vm)},
+        crash?.let { report -> { JamesCard("Last app crash","LOCAL BETA DIAGNOSTIC") {
+            Text("${report.exceptionType.substringAfterLast('.')} · ${report.occurredAt}")
+            Text("Route: ${report.previousRoute.ifBlank {"unknown"}} → ${report.route.ifBlank {"unknown"}}")
+            Muted("Phase: ${report.uiPhase.ifBlank {"unknown"}} · app ${report.appVersion} · database ${report.databaseSchemaVersion}")
+            if(report.message.isNotBlank())Muted(report.message)
+            if(report.jamesFrames.isNotEmpty()) { Text("James OS stack",style=MaterialTheme.typography.labelLarge);report.jamesFrames.forEach {Muted(it)} }
+            TextButton(onClick=vm::clearLocalCrashReport){Text("CLEAR LOCAL REPORT")}
+            Muted("Contains no health values, locations, notes, credentials or provider payloads. It stays on this phone unless you choose to share it.")
+        } } }
+    ),keys=buildList {add("diagnostics-title");add("data-status");if(crash!=null)add("last-crash")})
+}
 @Composable private fun EnergyTimeSettingsCard(vm:JamesViewModel) {
     val current by vm.energyTimeSettings.collectAsStateWithLifecycle()
     fun save(change:(uk.co.james.settings.EnergyTimeSettings)->uk.co.james.settings.EnergyTimeSettings){vm.energyTimeSettings(change(current))}
