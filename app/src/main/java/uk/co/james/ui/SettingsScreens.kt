@@ -17,26 +17,65 @@ import java.time.ZoneId
 import kotlin.math.roundToInt
 
 @Composable fun SettingsScreen(vm:JamesViewModel,export:(String?)->Unit,install:()->Unit) {
+    val compactToday by vm.compactToday.collectAsStateWithLifecycle()
+    val health by vm.health.collectAsStateWithLifecycle()
+    val whoopConfigured by vm.whoopConfigured.collectAsStateWithLifecycle()
+    val wear by vm.wearStatus.collectAsStateWithLifecycle()
+    AdaptiveCards(listOf(
+        {PageTitle("Settings","EVERYTHING HAS A HOME")},
+        {SettingsDestinationCard("Display & Today",if(compactToday)"Compact Today" else "Classic Today","Layout, theme and presentation preferences") {vm.navigate("Settings:Display")}},
+        {SettingsDestinationCard("Connections & Data",listOf(if(health.granted.isEmpty())"Health Connect not connected" else "Health Connect connected",if(whoopConfigured)"WHOOP connected" else "WHOOP not connected").joinToString(" · "),"Providers, permissions, nutrition and Shift Tracker status") {vm.navigate("Connections")}},
+        {SettingsDestinationCard("Watch & Sensors",if(wear.connected)"${wear.device.ifBlank {"Wear OS"} · connected" else "Watch not connected","Wear companion, sensor choices, sync and watch updates") {vm.navigate("Settings:Watch")}},
+        {SettingsDestinationCard("Places & Context","Location, places and movement","Location permissions, known places and context detection") {vm.navigate("Location")}},
+        {SettingsDestinationCard("James OS & Calibration","Algorithms and personal tuning","Energy, wellbeing and calibration controls") {vm.navigate("Settings:JamesOS")}},
+        {SettingsDestinationCard("Data, Backup & Import","Import Centre","Export, validated restore and backup maintenance") {vm.navigate("Import Centre")}},
+        {SettingsDestinationCard("App & Updates","James OS ${BuildConfig.VERSION_NAME}","Signed app updates, release source and version information") {vm.navigate("Settings:App")}},
+        {SettingsDestinationCard("Advanced & Diagnostics","Technical status","Data-source and maintenance information") {vm.navigate("Settings:Diagnostics")}}
+    ),keys=listOf("settings-title","display","connections","watch","places","james-os","backup","updates","diagnostics"))
+}
+
+@Composable private fun SettingsDestinationCard(title:String,summary:String,description:String,onClick:()->Unit) {
+    JamesCard(title,summary,onClick=onClick) {
+        Muted(description)
+        Text("Open",color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.labelLarge)
+    }
+}
+
+@Composable fun DisplaySettingsScreen(vm:JamesViewModel) {
     val theme by vm.theme.collectAsStateWithLifecycle()
     val compactToday by vm.compactToday.collectAsStateWithLifecycle()
     AdaptiveCards(listOf(
-        {PageTitle("Settings","MAKE JAMES YOURS")},
-        {JamesCard("Appearance","TODAY LAYOUT"){
+        {PageTitle("Display & Today","PRESENTATION PREFERENCES")},
+        {JamesCard("Appearance","TODAY LAYOUT") {
             Choice("Theme",theme,listOf("system","light","dark"),vm::theme)
             SensorSwitch("Compact Today",compactToday,vm::compactToday)
             Muted(if(compactToday)"Prioritised live state and compact daily summaries. Compact Today is active." else "Classic Today is active. It shows the original full dashboard layout.")
-        }},
-        {JamesCard("Data & Sync"){Button(onClick={vm.navigate("Import Centre")}){Text("Import Centre")};TextButton(onClick={export(null)}){Text("Export James backup")};Muted("Daily app-private snapshots run with WorkManager. Export a separate copy: uninstalling Android removes app-private data.")}},
-        {JamesCard("Connections"){Button(onClick={vm.navigate("Connections")}){Text("Manage connections")};TextButton(onClick={vm.navigate("Location")}){Text("Location & movement")}}},
-        {AlgorithmsSettingsCard(vm)},
-        {EnergyTimeSettingsCard(vm)},
-        {MentalWellbeingSettingsCard(vm)},
-        {DataStatusCard(vm)},
-        {WearSensorSettingsCard(vm)},
-        {WearCompanionCard(vm)},
-        {UpdateSettingsCard(vm,install)}
-    ))
+        }}
+    ),keys=listOf("display-title","appearance"))
 }
+
+@Composable fun WatchSettingsScreen(vm:JamesViewModel) = AdaptiveCards(listOf(
+    {PageTitle("Watch & Sensors","COMPANION AND SENSOR PREFERENCES")},
+    {WearCompanionCard(vm)},
+    {WearSensorSettingsCard(vm)}
+),keys=listOf("watch-title","watch-companion","watch-sensors"))
+
+@Composable fun JamesOsSettingsScreen(vm:JamesViewModel) = AdaptiveCards(listOf(
+    {PageTitle("James OS & Calibration","PERSONAL, VERSIONED CONTROLS")},
+    {AlgorithmsSettingsCard(vm)},
+    {EnergyTimeSettingsCard(vm)},
+    {MentalWellbeingSettingsCard(vm)}
+),keys=listOf("james-title","algorithms","energy-time","wellbeing"))
+
+@Composable fun AppSettingsScreen(vm:JamesViewModel,install:()->Unit) = AdaptiveCards(listOf(
+    {PageTitle("App & Updates","SIGNED JAMES OS RELEASES")},
+    {UpdateSettingsCard(vm,install)}
+),keys=listOf("app-title","updates"))
+
+@Composable fun DiagnosticsSettingsScreen(vm:JamesViewModel) = AdaptiveCards(listOf(
+    {PageTitle("Advanced & Diagnostics","TECHNICAL STATUS")},
+    {DataStatusCard(vm)}
+),keys=listOf("diagnostics-title","data-status"))
 @Composable private fun EnergyTimeSettingsCard(vm:JamesViewModel) {
     val current by vm.energyTimeSettings.collectAsStateWithLifecycle()
     fun save(change:(uk.co.james.settings.EnergyTimeSettings)->uk.co.james.settings.EnergyTimeSettings){vm.energyTimeSettings(change(current))}
@@ -158,7 +197,6 @@ import kotlin.math.roundToInt
         if(whoopConfigured){TextButton(enabled=!busy,onClick={vm.whoopSync()}){Text(if(whoop?.text("status")=="synced")"Sync WHOOP"else "Finish connection & sync")};TextButton(enabled=!busy,onClick={vm.whoopDisconnect()}){Text("Disconnect")}}
         Muted("Sign in with your ChatGPT owner account, then authorise WHOOP. Return here to finish. WHOOP does not provide its live Stress Monitor score through this API.")
     }}
-    listOf("Shift Tracker","Gig Tracker").forEach {name->cards.add {JamesCard(name,"Not connected"){Muted("Read-only integration is not configured yet. $name remains authoritative for its records.")}}}
     AdaptiveCards(cards)
 }
 @Composable fun ImportScreen(vm:JamesViewModel,choose:()->Unit,export:(String?)->Unit) {
