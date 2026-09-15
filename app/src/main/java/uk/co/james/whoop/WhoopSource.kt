@@ -136,6 +136,10 @@ class WhoopSource(context: Context, private val repo: JamesRepository) {
                     } while (token.isNotBlank())
                 }
                 repo.externalBatch(incoming)
+                // Reconstruct a single bounded set of Part 2 sleep-detail rows
+                // from retained raw evidence. This has no network effect; normal
+                // incoming rows already carry their detail mapper result.
+                repo.backfillWhoopSleepDetails(end)
                 // Reconcile immediately from the just-persisted rows. This makes
                 // manual, foreground and WorkManager syncs use the same pipeline.
                 val battery=bodyBattery(repo.stateInputs(end),end,trigger="whoop_sync")

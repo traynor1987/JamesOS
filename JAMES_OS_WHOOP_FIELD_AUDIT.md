@@ -268,3 +268,11 @@ Existing `WhoopMapperTest` covers unscored records, missing values, stable ident
 ## Conclusion
 
 James OS is not starved of WHOOP data. It already has the four right data families and preserves the richest unused fields locally. The next sensible move is to use the sleep evidence it already has—carefully and transparently—rather than build more Wear polling or chase undocumented WHOOP consumer features.
+
+## Part 2 implementation status — 2026-09-15
+
+**Implemented on main:** scored raw WHOOP Sleep records now create one versioned `SleepDetail` companion record (`mappingVersion=1`) with stable identity `whoop:sleep-detail:<sleep-id>`. It maps the documented baseline, debt, recent-strain and signed recent-nap components; derives total need only when all four are present; compares actual asleep-stage duration with that total as shortfall, met need or surplus; and maps efficiency, consistency, awake time, disturbances, time in bed, no-data duration, sleep-cycle count and Light/SWS/REM composition.
+
+The raw `ExternalRecord.data.original` is unchanged and remains authoritative evidence. A one-time bounded local compatibility pass reconstructs details from retained raw records, while ordinary two-day revision sync updates the same stable detail record. No API call, OAuth scope, backfill window, sync cadence, main Sleep record, Health Connect fallback, or raw-record retention changed.
+
+Today’s existing sleep card now has a compact provider-neutral Need/Shortfall/Surplus line and an optional `Sleep details` drill-down. The drill-down explains the need components, quality detail and stage composition, then identifies **WHOOP Sleep** and mapping/update provenance once—not on every normal value. Sleep Detail is not a `HealthMetric`; Sleepiness v1, Body Battery, Recovery, calibration and every other wellbeing algorithm remain intentionally unchanged.

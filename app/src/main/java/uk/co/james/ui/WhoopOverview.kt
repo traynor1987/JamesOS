@@ -46,6 +46,7 @@ data class WhoopOverviewSnapshot(
     val respiratory:StoredRecord?,
     val oxygen:StoredRecord?,
     val skinTemperature:StoredRecord?,
+    val sleepDetail:StoredRecord?,
     val bodyUpdated:String,
     val wellbeingUpdated:String
 )
@@ -77,12 +78,17 @@ internal fun prepareWhoopOverview(records:List<StoredRecord>,clock:Instant):Whoo
     val respiratory=currentMetric(records,"Respiratory rate",clock)
     val oxygen=currentMetric(records,"Blood oxygen",clock)
     val skinTemperature=currentMetric(records,"Skin temperature",clock,true)
+    val sleepDetailId=sleep?.raw()?.obj("metadata")?.text("whoopId").orEmpty()
+    val sleepDetail=records.asSequence().filter {it.kind=="SleepDetail"&&it.source=="whoop"&&!it.data().flag("nap")}
+        .filter {sleepDetailId.isBlank()||it.data().text("sleepRecordId")==sleepDetailId}
+        .filter {runCatching {Instant.parse(it.timestamp)<=clock}.getOrDefault(false)}
+        .maxByOrNull {it.updatedAt.ifBlank {it.timestamp}}
     val wellbeingUpdated=relativeJamesUpdate(clock,records.asSequence().filter {row->
         row.kind in setOf("HealthMetric","MoodEntry","WellbeingCheckIn") &&
             (row.data().text("metric") in setOf("James Stress","HRV","Resting heart rate","Sleep","Recovery","Heart rate") ||
              row.kind in setOf("MoodEntry","WellbeingCheckIn"))
     }.toList())
-    return WhoopOverviewSnapshot(battery,sleep,sleepQuality,recovery,strain,hrv,resting,respiratory,oxygen,skinTemperature,
+    return WhoopOverviewSnapshot(battery,sleep,sleepQuality,recovery,strain,hrv,resting,respiratory,oxygen,skinTemperature,sleepDetail,
         bodySourceFreshness(clock,recovery,sleepQuality?:sleep,battery.strainDiagnostics),wellbeingUpdated)
 }
 
@@ -99,6 +105,7 @@ internal fun prepareWhoopOverview(records:List<StoredRecord>,clock:Instant):Whoo
     val battery=snapshot.battery
     val processing=battery.sleepProcessing
     var explain by rememberSaveable {mutableStateOf(false)}
+    var sleepDetailOpen by rememberSaveable {mutableStateOf(false)}
     val sleep=snapshot.sleep
     val sleepQuality=snapshot.sleepQuality
     val recovery=snapshot.recovery
@@ -193,7 +200,7 @@ internal fun prepareWhoopOverview(records:List<StoredRecord>,clock:Instant):Whoo
             if(processing) {
                 SleepProcessingCard()
             } else {
-                SleepWindowCard(sleep)
+                SleepWindowCard(sleep,snapshot.sleepDetail,onOpenDetail={sleepDetailOpen=true})
                 HorizontalDivider(color=Color.White.copy(alpha=.12f))
                 Text("OVERNIGHT HEALTH MONITOR",color=stateQuiet,style=MaterialTheme.typography.labelSmall,letterSpacing=1.2.sp)
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
@@ -248,6 +255,7 @@ internal fun prepareWhoopOverview(records:List<StoredRecord>,clock:Instant):Whoo
             Text("Calculated ${trace.calculatedAt}",style=MaterialTheme.typography.labelSmall,color=stateQuiet)
         }
     }},confirmButton={TextButton(onClick={explain=false}){Text("Close")}})
+    if(sleepDetailOpen&&snapshot.sleepDetail!=null)SleepDetailDialog(snapshot.sleepDetail,onDismiss={sleepDetailOpen=false})
 }
 
 @Composable private fun BodyBatteryMentalWellbeing(
@@ -476,16 +484,44 @@ private fun relativeJamesUpdate(clock:Instant,rows:List<StoredRecord>):String {
     }
 }
 
-@Composable private fun SleepWindowCard(sleep:StoredRecord?) {
+private fun sleepDuration(millis:Double?):String?=millis?.takeIf {it.isFinite()&&it>=0.0}?.let {value->
+    val minutes=(value/60000.0).toInt();"${minutes/60}h ${minutes%60}m"
+}
+
+@Composable private fun SleepWindowCard(sleep:StoredRecord?,detail:StoredRecord?,onOpenDetail:()->Unit) {
     val minutes=sleep?.data()?.number("value")?.toInt()
     val start=sleep?.data()?.text("start").orEmpty();val end=sleep?.data()?.text("end").orEmpty()
+    val detailData=detail?.data();val need=sleepDuration(detailData?.number("totalSleepNeedMilli",Double.NaN)?.takeIf(Double::isFinite))
+    val shortfall=sleepDuration(detailData?.number("shortfallMilli",Double.NaN)?.takeIf {it.isFinite()&&it>0.0})
+    val surplus=sleepDuration(detailData?.number("surplusMilli",Double.NaN)?.takeIf {it.isFinite()&&it>0.0})
     Surface(Modifier.fillMaxWidth(),shape=RoundedCornerShape(18.dp),color=statePanel,contentColor=Color.White) {
-        Row(Modifier.padding(horizontal=15.dp,vertical=13.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(14.dp)) {
-            Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(4.dp)) {Text("LAST SLEEP",color=jamesBlue,style=MaterialTheme.typography.labelSmall,letterSpacing=1.sp);Text(minutes?.let {"${it/60}h ${it%60}m"}?:"Awaiting sleep",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold)}
-            Column(horizontalAlignment=Alignment.End,verticalArrangement=Arrangement.spacedBy(4.dp)) {Text(if(start.isNotBlank()&&end.isNotBlank())"${sleepClock(start)} – ${sleepClock(end)}" else "WHOOP overnight",style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold);Text("WHOOP",color=stateQuiet,style=MaterialTheme.typography.labelSmall)}
+        Column(Modifier.padding(horizontal=15.dp,vertical=13.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+            Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(14.dp)) {
+                Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(4.dp)) {Text("LAST SLEEP",color=jamesBlue,style=MaterialTheme.typography.labelSmall,letterSpacing=1.sp);Text(minutes?.let {"${it/60}h ${it%60}m"}?:"Awaiting sleep",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold)}
+                Column(horizontalAlignment=Alignment.End,verticalArrangement=Arrangement.spacedBy(4.dp)) {Text(if(start.isNotBlank()&&end.isNotBlank())"${sleepClock(start)} – ${sleepClock(end)}" else "Overnight sleep",style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold);Text("Recorded sleep",color=stateQuiet,style=MaterialTheme.typography.labelSmall)}
+            }
+            if(need!=null)Text(listOfNotNull("Need $need",shortfall?.let {"Shortfall $it"},surplus?.let {"Surplus $it"},if(detailData?.text("needStatus")=="MET")"Need met" else null).joinToString(" · "),color=stateMint,style=MaterialTheme.typography.labelMedium)
+            if(detail!=null)TextButton(onClick=onOpenDetail,contentPadding=PaddingValues(0.dp)){Text("SLEEP DETAILS  →",color=stateMint,style=MaterialTheme.typography.labelSmall)}
         }
     }
 }
+
+@Composable private fun SleepDetailDialog(detail:StoredRecord,onDismiss:()->Unit) {
+    val d=detail.data();fun duration(key:String)=sleepDuration(d.number(key,Double.NaN).takeIf(Double::isFinite))
+    fun line(label:String,value:String?){if(value!=null)Text("$label  $value",style=MaterialTheme.typography.bodyMedium)}
+    AlertDialog(onDismissRequest=onDismiss,title={Text("Sleep detail")},text={Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+        Text("SLEEP NEED",color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.labelSmall)
+        duration("totalSleepNeedMilli")?.let {Text(it,style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold)}?:Text("Unavailable",color=stateQuiet)
+        line("Baseline",duration("baselineSleepNeedMilli"));line("Sleep debt",duration("sleepDebtContributionMilli")?.let {"+$it"});line("Recent strain",duration("recentStrainContributionMilli")?.let {"+$it"})
+        d.number("napAdjustmentMilli",Double.NaN).takeIf(Double::isFinite)?.let {line("Nap adjustment",(if(it<0)"−" else "+")+sleepDuration(kotlin.math.abs(it)))}
+        when(d.text("needStatus")){"SHORTFALL"->line("Shortfall",duration("shortfallMilli"));"SURPLUS"->line("Surplus",duration("surplusMilli"));"MET"->Text("Sleep met the estimated need.",color=stateMint)}
+        HorizontalDivider();Text("SLEEP QUALITY",color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.labelSmall)
+        line("Efficiency",d.number("efficiencyPercentage",Double.NaN).takeIf(Double::isFinite)?.let {"${it.toInt()}%"});line("Consistency",d.number("consistencyPercentage",Double.NaN).takeIf(Double::isFinite)?.let {"${it.toInt()}%"});line("Awake",duration("awakeDurationMilli"));line("Disturbances",d.number("disturbanceCount",Double.NaN).takeIf(Double::isFinite)?.toInt()?.toString())
+        val stages=d.obj("stages");val stageLines=listOfNotNull(durationFrom(stages,"slowWaveMilli")?.let {"Deep $it"},durationFrom(stages,"remMilli")?.let {"REM $it"},durationFrom(stages,"lightMilli")?.let {"Light $it"});if(stageLines.isNotEmpty()){HorizontalDivider();Text("SLEEP STAGES",color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.labelSmall);Text(stageLines.joinToString(" · "),style=MaterialTheme.typography.bodySmall)}
+        HorizontalDivider();Text("SOURCE",color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.labelSmall);Text("WHOOP Sleep",style=MaterialTheme.typography.bodyMedium);Text("Recorded: ${d.text("start")} – ${d.text("end")}",color=stateQuiet,style=MaterialTheme.typography.bodySmall);Text("Last updated: ${detail.updatedAt.ifBlank {detail.timestamp}} · James OS mapping v${d.text("mappingVersion")}",color=stateQuiet,style=MaterialTheme.typography.bodySmall)
+    }},confirmButton={TextButton(onClick=onDismiss){Text("Close")}})
+}
+private fun durationFrom(data:kotlinx.serialization.json.JsonObject,key:String)=sleepDuration(data.number(key,Double.NaN).takeIf(Double::isFinite))
 private fun sleepClock(value:String)=runCatching {Instant.parse(value).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm"))}.getOrDefault("—")
 
 @Composable private fun RingMetric(reading:RingReading, modifier:Modifier=Modifier) {
@@ -496,7 +532,7 @@ private fun sleepClock(value:String)=runCatching {Instant.parse(value).atZone(Zo
             Text(reading.display,style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold,maxLines=1)
         }
         Text(reading.label,style=MaterialTheme.typography.labelSmall,fontWeight=FontWeight.Bold,letterSpacing=.8.sp)
-        Text(if(reading.record!=null)"WHOOP" else "Waiting",color=stateQuiet,style=MaterialTheme.typography.labelSmall)
+        Text(if(reading.record!=null)"Recorded" else "Waiting",color=stateQuiet,style=MaterialTheme.typography.labelSmall)
     }
 }
 

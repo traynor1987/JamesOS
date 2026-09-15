@@ -24,6 +24,11 @@ class BodyBatteryTest {
         val battery=bodyBattery(listOf(metric("Recovery",30.0,"%"),samsung),clock,ZoneOffset.UTC)
         assertEquals(49,battery.morning)
     }
+    @Test fun sleepDetailIsExplanationOnlyAndDoesNotChangeBodyBattery() {
+        val inputs=listOf(metric("Sleep",420.0,"min",Instant.parse("2026-09-10T07:00:00Z")),metric("Sleep quality",72.0,"%",Instant.parse("2026-09-10T07:00:00Z")),metric("Recovery",55.0,"%",Instant.parse("2026-09-10T07:00:00Z")),metric("Strain",4.7,"/ 21",clock))
+        val detail=StoredRecord.from("personalRecords",personal("SleepDetail",fields("totalSleepNeedMilli" to p(30_000_000),"shortfallMilli" to p(4_800_000),"efficiencyPercentage" to p(81)),"whoop:sleep-detail:synthetic","whoop",Instant.parse("2026-09-10T07:00:00Z").toString()))
+        assertEquals(bodyBattery(inputs,clock,ZoneOffset.UTC),bodyBattery(inputs+detail,clock,ZoneOffset.UTC))
+    }
     @Test fun missingReadinessStaysUnavailable() {
         assertNull(bodyBattery(emptyList(),clock,ZoneOffset.UTC).value)
     }

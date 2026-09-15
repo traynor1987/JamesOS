@@ -37,6 +37,17 @@ class SleepinessTest {
         assertEquals(before.score,after.score);assertTrue(after.score>=60)
     }
 
+    @Test fun mappedSleepDetailDoesNotChangeSleepinessOrCalibrationEvidence() {
+        val rows=history(5,420)+main(300,clock.minus(Duration.ofHours(11)))
+        val before=sleepiness(rows,clock,ZoneOffset.UTC)
+        val detail=StoredRecord.from("personalRecords",personal("SleepDetail",fields(
+            "sleepRecordId" to p("synthetic"),"mappingVersion" to p("1"),"actualSleepDurationMilli" to p(18_000_000),
+            "totalSleepNeedMilli" to p(28_800_000),"shortfallMilli" to p(10_800_000),"efficiencyPercentage" to p(78),"consistencyPercentage" to p(62)
+        ),"whoop:sleep-detail:synthetic","whoop",clock.minus(Duration.ofHours(11)).toString()))
+        val after=sleepiness(rows+detail,clock,ZoneOffset.UTC)
+        assertEquals(before,after)
+    }
+
     @Test fun caffeineChangesExpressedNotUnderlyingPressure() {
         val rows=history(5,420)+main(240,clock.minus(Duration.ofHours(15)))
         val before=sleepiness(rows,clock,ZoneOffset.UTC)

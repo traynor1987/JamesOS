@@ -18,6 +18,7 @@ import uk.co.james.state.BodyBattery
 import uk.co.james.state.bodyBatteryRecord
 import uk.co.james.calibration.*
 import uk.co.james.location.reconstructLegacyVisits
+import uk.co.james.whoop.WhoopMapper
 import java.io.File
 import java.time.*
 import java.util.concurrent.ConcurrentHashMap
@@ -49,6 +50,23 @@ class JamesRepository(val context: Context, val db: JamesDatabase) {
     private val archiveDir=File(context.filesDir,"archives").apply { mkdirs() }
     private val activeStaged=ConcurrentHashMap.newKeySet<String>()
     suspend fun stateInputs(at:Instant=Instant.now()):List<StoredRecord> = dao.stateInputs(at.minus(Duration.ofDays(40)).toString())
+    /** One bounded compatibility pass after the Part 2 mapper is introduced.
+     * New/revised provider rows are mapped in WhoopMapper.records during every
+     * ordinary sync; this only reconstructs details from already-retained raw
+     * evidence and never makes an API request. */
+    suspend fun backfillWhoopSleepDetails(at:Instant=Instant.now(),force:Boolean=false):Int = db.withTransaction {
+        val key="whoop-sleep-detail-backfill:${WhoopMapper.SLEEP_DETAIL_MAPPING_VERSION}"
+        if(!force&&dao.get("metadata",key)!=null)return@withTransaction 0
+        val raws=dao.sourceKindBetween("whoop","ExternalRecord",at.minus(Duration.ofDays(40)).toString(),at.toString())
+            .filter {it.data().text("type")=="sleep"}
+            .mapNotNull {WhoopMapper.sleepDetailRecord(it.data().obj("original"))}
+        val candidates=raws.map {StoredRecord.from("personalRecords",it)}.groupBy {it.recordId}.values.map {versions->versions.maxBy {it.updatedAt}}
+        val existing=candidates.map {it.recordId}.distinct().chunked(500).flatMap {dao.getByIds("personalRecords",it)}.associateBy {it.recordId}
+        val accepted=candidates.filter {incoming->existing[incoming.recordId]?.let {old->old.source==incoming.source&&incoming.updatedAt>=old.updatedAt}?:true}
+        if(accepted.isNotEmpty())dao.putAll(accepted)
+        dao.put(StoredRecord.from("metadata",fields("key" to p(key),"value" to fields("mappingVersion" to p(WhoopMapper.SLEEP_DETAIL_MAPPING_VERSION),"completedAt" to p(now()),"records" to p(accepted.size)))))
+        accepted.size
+    }
     suspend fun readFile(uri: Uri): String = withContext(Dispatchers.IO) {
         context.contentResolver.openInputStream(uri)?.use { input -> val output=java.io.ByteArrayOutputStream();val buffer=ByteArray(8192);var count=input.read(buffer);while(count!=-1){require(output.size()+count<=40*1024*1024){"Backup exceeds 40 MB."};output.write(buffer,0,count);count=input.read(buffer)};output.toString("UTF-8") } ?: error("Cannot open the chosen file.")
     }
@@ -74,6 +92,10 @@ class JamesRepository(val context: Context, val db: JamesDatabase) {
         // Imported legacy records may be older than the local watermark. This
         // is the only deliberate full compatibility pass; normal startup stays incremental.
         reconstructLegacyVisits(afterImport=true)
+        // Import can restore a prior backup containing raw WHOOP sleep but no
+        // derived Part 2 companion. Rebuild only from local evidence; never
+        // reach back to WHOOP and never duplicate stable detail identities.
+        backfillWhoopSleepDetails(force=true)
         result
     }
     suspend fun exportTo(uri: Uri) = withContext(Dispatchers.IO) {
