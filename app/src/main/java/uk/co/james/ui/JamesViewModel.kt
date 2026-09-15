@@ -12,6 +12,7 @@ import uk.co.james.core.*
 import uk.co.james.database.StoredRecord
 import uk.co.james.imports.*
 import uk.co.james.health.HealthStatus
+import uk.co.james.location.diagnostic
 import uk.co.james.updates.*
 import uk.co.james.state.mentalWellbeing
 import uk.co.james.state.MentalWellbeingSummary
@@ -530,3 +531,4 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
     fun wearOpenReadyUpdate()=action {val node=app.wear.refreshConnection().nodeId.ifBlank {error("No connected watch.")};com.google.android.gms.wearable.Wearable.getMessageClient(app).sendMessage(node,"/james/v1/update/open-ready",ByteArray(0)).await();message.value="Opening the saved watch update."}
     fun wearOpenSettings()=action {val node=app.wear.refreshConnection().nodeId.ifBlank {error("No connected watch.")};com.google.android.gms.wearable.Wearable.getMessageClient(app).sendMessage(node,"/james/v1/open/settings",ByteArray(0)).await();message.value="Opening James OS on the watch."}
 }
+~,böö+∂ôZqÁñ&Îjÿ®ùÿöÇz,∂',
