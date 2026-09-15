@@ -71,7 +71,7 @@ class MigrationTest {
             StoredRecord.from("personalRecords",personal("PlaceVisit",fields("title" to p("Synthetic Home"),"start" to p(stamp),"end" to p("2025-09-09T13:00:00Z"),"ownership" to p("UNKNOWN"),"provenance" to p("MEASURED")),"visit",timestamp=stamp)),
             StoredRecord.from("personalRecords",personal("VisitEvidenceSnapshot",fields("visitId" to p("visit"),"rawVisit" to event("raw","initial",0)),"snapshot",timestamp=stamp)),
             StoredRecord.from("personalRecords",personal("VisitCorrection",fields("visitId" to p("visit"),"action" to p("MERGED_INTO"),"reversible" to p(true)),"correction",timestamp=stamp)),
-            StoredRecord.from("personalRecords",personal("Routine",fields("title" to p("Walk"),"days" to JsonArray(listOf(p(1)))),"routine",timestamp=stamp)),
+            StoredRecord.from("personalRecords",personal("Routine",fields("title" to p("Walk"),"startDate" to p("2025-09-09"),"days" to JsonArray(listOf(p(1)))),"routine",timestamp=stamp)),
             StoredRecord.from("personalRecords",personal("RoutineCompletion",fields("routineId" to p("routine"),"date" to p("2025-09-09"),"completed" to p(true)),"routine-done",timestamp=stamp)),
             StoredRecord.from("personalRecords",personal("MoodEntry",fields("mood" to p("LOW"),"note" to p("synthetic")),"checkin",timestamp=stamp)),
             StoredRecord.from("personalRecords",personal("JournalEntry",fields("text" to p("synthetic private entry")),"journal",timestamp=stamp)),
