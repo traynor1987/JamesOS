@@ -1,1 +1,1 @@
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android"><item android:drawable="@color/james_black"/><item android:left="4dp" android="top="4dp" android:right="4dp" android="bottom="4dp" android:drawable="@drawable/ic_james_wear_focus_symbol"/></layer-list>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android"><item android:drawable="@color/james_black"/><item android:left="4dp" android:top="4dp" android:right="4dp" android:bottom="4dp" android:drawable="@drawable/ic_james_wear_focus_symbol"/></layer-list>
