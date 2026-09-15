@@ -80,6 +80,22 @@ class MigrationTest {
         val restored=BackupCodec.parse(BackupCodec.export(rows).toString()).rows
         assertEquals(rows.map {it.rawJson}.toSet(),restored.map {it.rawJson}.toSet())
     }
+    @Test fun populated_semantic_backup_imports_into_clean_state_and_second_import_is_idempotent() {
+        val rows=listOf(
+            StoredRecord.from("personalRecords",personal("PlaceVisit",fields("title" to p("Synthetic place"),"start" to p(stamp),"end" to p("2025-09-09T13:00:00Z"),"anchorId" to p("anchor"),"ownership" to p("UNKNOWN")),"visit",timestamp=stamp)),
+            StoredRecord.from("personalRecords",personal("ContextPeriod",fields("start" to p(stamp),"end" to p("2025-09-09T13:00:00Z"),"visitType" to p("PERSONAL_PROJECT"),"anchorId" to p("anchor")),"context",timestamp=stamp)),
+            StoredRecord.from("personalRecords",personal("LifeFactActivity",fields("title" to p("James OS"),"start" to p(stamp),"anchorId" to p("anchor")),"activity",timestamp=stamp)),
+            StoredRecord.from("personalRecords",personal("OwnershipPeriod",fields("start" to p(stamp),"end" to p("2025-09-09T12:30:00Z"),"ownership" to p("AUTONOMOUS"),"anchorId" to p("anchor")),"ownership",timestamp=stamp)),
+            StoredRecord.from("personalRecords",personal("VisitInterruption",fields("start" to p("2025-09-09T12:30:00Z"),"end" to p("2025-09-09T12:40:00Z"),"anchorId" to p("anchor"),"reason" to p("PHONE_CALL")),"interruption",timestamp=stamp)),
+            StoredRecord.from("personalRecords",personal("VisitCorrection",fields("visitId" to p("visit"),"action" to p("SPLIT"),"reversible" to p(true)),"correction",timestamp=stamp))
+        )
+        val plan=BackupCodec.parse(BackupCodec.export(rows).toString())
+        val cleanImport=BackupCodec.merge(plan,emptyList())
+        assertEquals(rows.map {it.store to it.recordId}.toSet(),cleanImport.additions.map {it.store to it.recordId}.toSet())
+        val repeat=BackupCodec.merge(plan,cleanImport.additions)
+        assertEquals(rows.size,repeat.duplicates)
+        assertTrue(repeat.additions.isEmpty())
+    }
     @Test fun legacy_reconstruction_is_full_only_for_first_run_or_import() {
         assertTrue(legacyReconstructionUsesFullScan("",false))
         assertTrue(legacyReconstructionUsesFullScan("2026-09-15T10:00:00Z",true))

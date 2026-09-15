@@ -30,7 +30,26 @@ object BackupCodec {
             "dailyNotes" -> require(validDate(r.text("date")) && validTime(r.text("updatedAt")) && r["text"] is JsonPrimitive) { "Invalid note." }
             "settings" -> if(r.text("key")=="theme") require((r["value"] as? JsonPrimitive)?.content in listOf("light","dark","system"))
             "metadata" -> if(r.text("key").startsWith("day-review:")) {val v=r.obj("value");require(validDate(v.text("date")) && validTime(v.text("updatedAt")) && v.text("status") in listOf("reviewed","quiet","unknown"))}
-            "personalRecords" -> {require(r.text("kind").isNotBlank() && r["data"] is JsonObject && listOf("timestamp","createdAt","updatedAt").all { validTime(r.text(it)) }) { "Invalid James record." };val d=r.obj("data");if(r.text("kind")=="Routine") require(d.text("title").isNotBlank() && validDate(d.text("startDate")) && d.text("startDate")>="1900-01-01" && d.array("days").isNotEmpty() && d.array("days").all { (it as? JsonPrimitive)?.intOrNull in 0..6 }) { "Invalid routine." };if(r.text("kind")=="RoutineCompletion") require(validDate(d.text("date")) && d.text("routineId").isNotBlank() && (d["completed"] as? JsonPrimitive)?.booleanOrNull!=null);if(r.text("kind")=="TimeBlock") require(validTime(d.text("end")) && java.time.Instant.parse(d.text("end")).isAfter(java.time.Instant.parse(r.text("timestamp"))));validateCalibrationRow(r)}
+            "personalRecords" -> {require(r.text("kind").isNotBlank() && r["data"] is JsonObject && listOf("timestamp","createdAt","updatedAt").all { validTime(r.text(it)) }) { "Invalid James record." };val d=r.obj("data");if(r.text("kind")=="Routine") require(d.text("title").isNotBlank() && validDate(d.text("startDate")) && d.text("startDate")>="1900-01-01" && d.array("days").isNotEmpty() && d.array("days").all { (it as? JsonPrimitive)?.intOrNull in 0..6 }) { "Invalid routine." };if(r.text("kind")=="RoutineCompletion") require(validDate(d.text("date")) && d.text("routineId").isNotBlank() && (d["completed"] as? JsonPrimitive)?.booleanOrNull!=null);if(r.text("kind")=="TimeBlock") require(validTime(d.text("end")) && java.time.Instant.parse(d.text("end")).isAfter(java.time.Instant.parse(r.text("timestamp"))));validateSemanticRow(r);validateCalibrationRow(r)}
+        }
+    }
+    /** Semantic rows remain generic JSON for import compatibility, but their
+     * essential interval/enum fields are now validated before they can become
+     * authoritative day evidence. Legacy rows without these current shapes are
+     * still retained as legacy context rather than guessed into ownership. */
+    private fun validateSemanticRow(raw:JsonObject) {
+        val kind=raw.text("kind"); val d=raw.obj("data")
+        fun interval(required:Boolean=true) {
+            val start=d.text("start",raw.text("timestamp"))
+            if(required) require(validTime(start)) { "Invalid $kind start." }
+            val end=d.text("end")
+            if(end.isNotBlank()) require(validTime(end) && java.time.Instant.parse(end)>=java.time.Instant.parse(start)) { "Invalid $kind end." }
+        }
+        when(kind) {
+            "PlaceVisit" -> { interval(); require(d.text("title").isNotBlank()) { "Invalid Visit." } }
+            "OwnershipPeriod" -> { interval(); require(d.text("ownership") in setOf("AUTONOMOUS","COMMITTED","CONSTRAINED","WORK","UNKNOWN")) { "Invalid ownership." } }
+            "ContextPeriod" -> { interval(); require(d.text("visitType","UNKNOWN") in setOf("HOME","WORK","DRIVING","SHOPPING","FAMILY","SOCIAL","APPOINTMENT","ERRAND","MEAL","LEISURE","PERSONAL_PROJECT","RESTING","OTHER","PERSONAL","NEUTRAL","OBLIGATION","UNKNOWN")) { "Invalid context." } }
+            "VisitInterruption" -> interval()
         }
     }
     private fun validateCalibrationRow(raw:JsonObject) {
