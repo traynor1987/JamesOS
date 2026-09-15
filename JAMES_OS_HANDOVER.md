@@ -17,6 +17,12 @@
 - James Calibration Engine: 1.0.3
 - Release: https://github.com/traynor1987/JamesOS/releases/tag/v0.3.213
 
+## Product and architecture audit — 2026-09-15
+
+The source-first, documentation-only audit is in [JAMES_OS_PRODUCT_AUDIT.md](JAMES_OS_PRODUCT_AUDIT.md). It classifies current user journeys rather than relying on prior handover claims, and records the proposed 1.0 boundary, scope rejects and prioritised roadmap.
+
+Highest-priority findings are: Health Connect code reads HRV/SpO2/respiration without matching manifest permissions; Visit merge currently deletes a merged Visit despite writing a correction; legacy Visit reconstruction scans all legacy rows at application start; Context/Activity/ownership records are not yet one fully linked semantic-period model; and Timeline still uses a calendar-date route while newer summaries use James Day. Treat these as correctness/foundation work before adding new providers, continuous Wear sampling, AI, prediction or another dashboard.
+
 ## Today 2.0 / Compact Today
 
 Compact Today is the default Today presentation. Settings → Appearance → Today Layout exposes a live `Compact Today` switch; disabling it selects the preserved original `Classic Today` dashboard. The choice is a device-local DataStore presentation preference (`compact-today`, default `true`) and survives process recreation, reboot and app updates. It has no database, health, sync, James Day, algorithm or calibration semantics.
