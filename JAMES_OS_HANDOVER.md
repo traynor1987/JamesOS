@@ -12,10 +12,10 @@
 
 ## Current release
 
-- Phone: 0.3.209
+- Phone: 0.3.213
 - Wear: 0.2.2
 - James Calibration Engine: 1.0.3
-- Release: https://github.com/traynor1987/JamesOS/releases/tag/v0.3.209
+- Release: https://github.com/traynor1987/JamesOS/releases/tag/v0.3.213
 
 ## Today 2.0 / Compact Today
 
