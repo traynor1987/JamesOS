@@ -18,6 +18,7 @@ import uk.co.james.JamesApplication
 import uk.co.james.sync.BackgroundJobs
 import kotlinx.serialization.json.*
 import kotlinx.coroutines.*
+import java.time.Instant
 
 @Suppress("MissingPermission") // Each public operation checks its runtime permissions before calling Play services.
 class LocationSource(private val context: Context,private val repo: JamesRepository,private val preferences: Preferences) {
@@ -35,19 +36,57 @@ class LocationSource(private val context: Context,private val repo: JamesReposit
             try {AllDayLocationService.start(context)} catch(e:Exception) {preferences.allDay(false);throw e}
         } else {preferences.allDay(false);AllDayLocationService.stop(context)}
     }
-    suspend fun addCurrentPlace(name: String,category:String="Unclassified") {
+    /** Explicit calibration deliberately does not reuse an arbitrary passive
+     * sample.  It may reuse a demonstrably fresh/accurate anchor; otherwise it
+     * asks Fused Location for one high-accuracy fix and keeps the low-power
+     * visit tracker untouched. */
+    suspend fun addCurrentPlace(name: String,category:String="Unclassified",onGettingPreciseFix:()->Unit = {}): CalibrationFix {
         require(name.isNotBlank() && precise()) { "Name the place and grant precise location first." }
-        val token=CancellationTokenSource()
-        val point=try { withTimeout(20000){LocationServices.getFusedLocationProviderClient(context).getCurrentLocation(Priority.PRIORITY_BALANCED_POWER_ACCURACY,token.token).await()} } finally {token.cancel()}
-        require(point!=null) { "No location fix available. Try outdoors." }
-        require(point.accuracy<=200) { "Location is too uncertain to save a place. Try again outdoors." }
+        val now=Instant.now()
+        val passive=passiveCalibrationFix()
+        val result=if(requiresPrecisePlaceCalibrationFix(passive,now)) {
+            onGettingPreciseFix()
+            val attempt=requestPreciseCalibrationFix()
+            selectPlaceCalibrationFix(passive,attempt.fix,attempt.failure,now)
+        } else selectPlaceCalibrationFix(passive,null,null,now)
+        val fix=(result as? PlaceCalibrationFixResult.Accepted)?.fix
+            ?: throw IllegalArgumentException((result as PlaceCalibrationFixResult.Rejected).message)
         val placeId="place:${id()}"
-        val place=personal("Place",fields("title" to p(name.trim()),"category" to p(category),"latitude" to p(point.latitude),"longitude" to p(point.longitude),"radius" to p(150)),placeId,"manual")
+        val place=personal("Place",fields("title" to p(name.trim()),"category" to p(category),"latitude" to p(fix.latitude),"longitude" to p(fix.longitude),"radius" to p(150)),placeId,"manual")
         repo.save("personalRecords",place)
         // A place may be saved just after leaving it. Give completed, unnamed visits
         // nearby the new label rather than making James wait for a future visit.
         relabelNearbyUnknownVisits(place,placeId)
         if(preferences.location.first())restore()
+        return fix
+    }
+    private data class PreciseFixAttempt(val fix:CalibrationFix?,val failure:CalibrationFixFailure?)
+    private suspend fun passiveCalibrationFix(): CalibrationFix? {
+        val anchor=repo.dao.currentLocationAnchor("location:current-anchor")?:return null
+        val data=anchor.data()
+        val latitude=data.number("latitude")
+        val longitude=data.number("longitude")
+        val accuracy=data.number("accuracy").toFloat()
+        val observedAt=runCatching { Instant.parse(data.text("lastSeen",data.text("start"))) }.getOrNull()?:return null
+        return CalibrationFix(latitude,longitude,accuracy,observedAt,CalibrationFixSource.PASSIVE_ANCHOR)
+            .takeIf { latitude!=0.0 || longitude!=0.0 }
+    }
+    private suspend fun requestPreciseCalibrationFix(): PreciseFixAttempt {
+        val token=CancellationTokenSource()
+        return try {
+            val point=withTimeout(20_000) {
+                LocationServices.getFusedLocationProviderClient(context)
+                    .getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY,token.token).await()
+            }
+            if(point==null) PreciseFixAttempt(null,CalibrationFixFailure.TIMEOUT)
+            else PreciseFixAttempt(
+                CalibrationFix(point.latitude,point.longitude,point.accuracy,
+                    point.time.takeIf {it>0}?.let(Instant::ofEpochMilli)?:Instant.now(),
+                    CalibrationFixSource.FUSED_CURRENT),null)
+        } catch(_:TimeoutCancellationException) {PreciseFixAttempt(null,CalibrationFixFailure.TIMEOUT)}
+        catch(_:SecurityException) {PreciseFixAttempt(null,CalibrationFixFailure.PERMISSION_MISSING)}
+        catch(_:Exception) {PreciseFixAttempt(null,CalibrationFixFailure.PROVIDER_UNAVAILABLE)}
+        finally {token.cancel()}
     }
     suspend fun labelVisit(visitId:String,placeId:String) {
         val visit=repo.dao.get("personalRecords",visitId)?:return

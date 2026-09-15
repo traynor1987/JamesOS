@@ -93,6 +93,7 @@ private object VisitRecorder {
                 "latitude" to p((d.number("latitude")*samples+point.latitude)/(samples+1)),
                 "longitude" to p((d.number("longitude")*samples+point.longitude)/(samples+1)),
                 "accuracy" to p(point.accuracy),
+                "provider" to p(point.provider?:"Fused low-power"),
                 "lastSeen" to p(at.toString()),
                 "samples" to p(samples+1),
                 "durationMin" to p(minutes),
@@ -118,6 +119,7 @@ private object VisitRecorder {
         app.repository.save("personalRecords",personal("LocationAnchor",fields(
             "start" to p(at.toString()),"lastSeen" to p(at.toString()),"latitude" to p(point.latitude),"longitude" to p(point.longitude),
             "accuracy" to p(point.accuracy),"samples" to p(1),"durationMin" to p(0),
+            "provider" to p(point.provider?:"Fused low-power"),
             "ownership" to p(inferredOwnership().name),"ownershipSource" to p("INFERRED"),"movement" to p("Stationary"),
             "placeId" to p(place?.recordId?:""),"placeName" to p(place?.data()?.text("title")?:"Unknown place"),
             "placeConfidence" to p(if(place==null)"LOW" else "MEDIUM"),"visitState" to p("CONFIRMING")

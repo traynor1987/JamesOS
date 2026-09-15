@@ -239,6 +239,12 @@ The prior regular validation failure was repository workflow setup, before tests
 - The map is bounded-range (Today, Yesterday, seven days), visit/pin based and intentionally has no breadcrumb/route line. It frames current location plus the selected visits, keeps known-place definitions visually distinct from actual visits, exposes a compact legend, and opens Visit details from visit pins. Do not reintroduce raw route rendering.
 - Places and Map use the same scoped `PlaceVisit` truth. Current anchors and saved places are small scoped reads; no whole-history Flow or historical visit replay runs on a live GPS fix.
 
+### Explicit saved-place calibration fix
+
+Passive location tracking and explicit calibration have different quality requirements. The low-power five-minute timeline remains conservative and is never made more battery-intensive merely to save a Place. **Save current place** now reuses the current `LocationAnchor` only when it is both fresh (no more than one minute old) and accurate (approximately ±30m or better). Otherwise it shows **Getting precise location…** and requests one `PRIORITY_HIGH_ACCURACY` Fused Location fix with a 20-second timeout. The same ±30m/freshness gate is then applied; the app never weakens it simply to make the button succeed.
+
+Failures are factual rather than blaming the environment: stale fix age, insufficient accuracy, missing precise permission, unavailable provider or precise-fix timeout. Places diagnostics show latest passive-fix age, accuracy and provider; calibration status shows the source/accuracy/age of the fix actually saved. Tests cover stale/inaccurate passive fixes replaced by a precise fix, timeout, provider failure and an already-fresh accurate anchor that saves without a second sensor request.
+
 ## Unified context and time ownership model
 
 The prior UI mixed legacy `ContextPeriod` values (PERSONAL/NEUTRAL/OBLIGATION), activity counts, and Visit ownership, producing contradictory totals. The current authority is deliberately separated: **Visit = when/where; Context = situation; Activity = what James did; Time Ownership = who controlled the time; Interruption = what changed it; Life Balance = a cautious interpretation.**

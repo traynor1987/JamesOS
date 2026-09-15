@@ -21,6 +21,8 @@ import uk.co.james.state.JamesAlgorithmRegistry
 import uk.co.james.calibration.*
 import java.io.File
 
+data class PlaceCalibrationUiState(val title:String,val detail:String,val inProgress:Boolean)
+
 class JamesViewModel(application: Application,private val saved: SavedStateHandle): AndroidViewModel(application) {
     private var lastQuietHealthSync=0L
     private var lastQuietWhoopSync=0L
@@ -64,6 +66,7 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
     val draft=saved.getStateFlow("draft","{}")
     val message=MutableStateFlow("")
     val busy=MutableStateFlow(false)
+    val placeCalibration=MutableStateFlow<PlaceCalibrationUiState?>(null)
     val plan=MutableStateFlow<ImportPlan?>(null)
     val merge=MutableStateFlow<MergeResult?>(null)
     val health=MutableStateFlow(HealthStatus(false,emptySet(),"Checking availability…"))
@@ -83,6 +86,20 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
     fun removeGithubAccess()=action {withContext(Dispatchers.IO){updateCredentials.clear()};githubAccess.value=false;update.value=null;downloaded.value=null;message.value="GitHub access removed."}
     init {saved.get<String>("staged-import")?.let {path->action {preview(path)}};refreshPermissions();viewModelScope.launch {stateRecords.filter {it.isNotEmpty()}.debounce(5000).collectLatest {runCatching {app.wear.publish(it)}}};viewModelScope.launch {combine(stateRecords,wellbeingSettings) { rows, settings->rows to settings }.filter {it.first.isNotEmpty()&&it.second.enabled}.debounce(8000).collectLatest {(rows,settings)->runCatching {repo.persistWellbeing(uk.co.james.state.mentalWellbeing(rows,settings))}}};viewModelScope.launch {stateRecords.filter {it.isNotEmpty()}.debounce(6000).collectLatest {rows->runCatching {repo.persistBodyBattery(bodyBattery(rows,trigger="records_refresh"))}}};viewModelScope.launch {combine(stateRecords,energyTimeSettings){rows,settings->rows to settings}.filter {it.first.isNotEmpty()}.debounce(9000).collectLatest {(rows,settings)->runCatching {repo.persistRightNow(rightNowSummary(rows,settings))}}};viewModelScope.launch {runCatching {app.wear.refreshConnection()}};viewModelScope.launch(Dispatchers.IO) {runCatching {repo.recoverInterruptedCalibrationAnalysis();repo.ensureCalibrationProfiles();repo.bootstrapCalibrationEvidence()}}}
     fun action(job:suspend ()->Unit) {if(!busy.compareAndSet(false,true))return;viewModelScope.launch {try{job()}catch(e:CancellationException){throw e}catch(e:Exception){message.value=e.message?:"The change could not be saved."}finally{busy.value=false}}}
+    fun saveCurrentPlace(name:String,category:String)=action {
+        placeCalibration.value=PlaceCalibrationUiState("Checking current location…","Using an existing fix immediately only when it is fresh and accurate.",true)
+        try {
+            val fix=app.location.addCurrentPlace(name,category) {
+                placeCalibration.value=PlaceCalibrationUiState("Getting precise location…","Passive tracking is low power; calibration is requesting one fresh high-accuracy fix.",true)
+            }
+            val detail=fix.diagnostic(java.time.Instant.now())
+            placeCalibration.value=PlaceCalibrationUiState("Place saved",detail,false)
+            message.value="Saved ${name.trim()} · $detail"
+        } catch(e:Exception) {
+            placeCalibration.value=PlaceCalibrationUiState("Place not saved",e.message?:"Couldn't obtain a suitable calibration fix.",false)
+            throw e
+        }
+    }
     fun navigate(value: String,main: Boolean=false) {saved["route"]=value;if(main)saved["tab"]=value}
     fun date(value: String) {if(validDate(value))saved["date"]=value}
     fun locationMapRange(days:Int) { if(days in setOf(1,2,7)) saved["location-map-range"]=days }
