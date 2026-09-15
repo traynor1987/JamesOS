@@ -53,9 +53,11 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
                 return@flatMapLatest repo.dao.observePlacesContext(end.minus(java.time.Duration.ofDays(days)).toString(),end.toString())
             }
             val selectedDay=runCatching { java.time.LocalDate.parse(selected) }.getOrElse { java.time.LocalDate.now() }
-            val days=when(screen) { "Timeline" -> 1L; "Insights", "Weekly review" -> 8L; "Me" -> 90L; else -> 40L }
-            val start=if(screen=="Timeline") selectedDay.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant() else selectedDay.minusDays(days-1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant()
-            val end=if(screen=="Timeline") selectedDay.plusDays(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant() else java.time.Instant.now().plus(java.time.Duration.ofMinutes(5))
+            val days=when(screen) { "Timeline" -> 3L; "Insights", "Weekly review" -> 8L; "Me" -> 90L; else -> 40L }
+            // Timeline needs a small boundary context around its selected civil
+            // date in order to resolve the actual James Day, not a whole history.
+            val start=if(screen=="Timeline") selectedDay.minusDays(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant() else selectedDay.minusDays(days-1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant()
+            val end=if(screen=="Timeline") selectedDay.plusDays(2).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant() else java.time.Instant.now().plus(java.time.Duration.ofMinutes(5))
             repo.dao.observeRouteWindow(start.toString(),end.toString())
         }.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),emptyList())
     val dialog=saved.getStateFlow("dialog","")
@@ -91,6 +93,8 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
             "Note" -> fields("date" to p(date.value),"text" to p(""),"updatedAt" to p(now()))
             "WeekReflection" -> fields("key" to p("week-reflection:"+java.time.LocalDate.parse(date.value).let {it.minusDays((it.dayOfWeek.value-1).toLong())}),"value" to fields("text" to p(""),"updatedAt" to p(now())))
             "Template" -> fields("id" to p(id()),"title" to p(""),"emoji" to p("✨"),"points" to p(25),"category" to p("Other"),"type" to p("positive"),"enabled" to p(true),"isDefault" to p(false),"order" to p(records.value.count {it.store=="eventTemplates"}))
+            "ContextPeriod" -> personal("ContextPeriod",fields("title" to p("Context"),"visitType" to p("UNKNOWN"),"start" to p(now()),"end" to p(""),"date" to p(date.value),"contextSource" to p("JAMES_CONFIRMED"),"note" to p("")))
+            "LifeFactActivity" -> personal("LifeFactActivity",fields("title" to p(""),"activityType" to p("OTHER"),"start" to p(now()),"end" to p(""),"date" to p(date.value),"activitySource" to p("JAMES_CONFIRMED"),"note" to p("")))
             else -> personal(kind,fields("date" to p(date.value),"title" to p(""),"category" to p(if(kind=="TimeBlock")"Coding" else "Personal"),"period" to p("Morning"),"days" to JsonArray((0..6).map {p(it)}),"startDate" to p(today()),"archived" to p(false),"mood" to p(""),"energy" to p(""),"good" to p(""),"bad" to p(""),"important" to p(""),"note" to p(""),"end" to p(now())))
         }
         saved["draft"]=raw.toString()
@@ -195,16 +199,24 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
         val start=visit.data().text("start").takeIf(::validTime)?.let(java.time.Instant::parse)?:return@action
         val previous=repo.dao.visitsBetween(start.minus(java.time.Duration.ofHours(12)).toString(),start.toString()).filter {it.recordId!=visit.recordId&&it.data().text("placeId")==visit.data().text("placeId")}.maxByOrNull {it.timestamp}?:return@action
         val p=previous.data();val v=visit.data();val end=v.text("end").takeIf(::validTime)?:return@action
-        val merged=previous.raw().changed("data" to p.changed("end" to p(end),"durationMin" to p(java.time.Duration.between(java.time.Instant.parse(p.text("start")),java.time.Instant.parse(end)).toMinutes()),"mergedVisitIds" to p(visit.recordId),"correctionSource" to p("JAMES_CORRECTION")),"updatedAt" to p(now()))
-        repo.save(previous.store,merged,previous.rawJson);repo.save("personalRecords",personal("VisitCorrection",fields("visitId" to p(visit.recordId),"action" to p("MERGED_INTO"),"targetVisitId" to p(previous.recordId),"source" to p("JAMES_CORRECTION"))));repo.dao.delete(visit.store,visit.recordId);message.value="Visits merged."
+        val stamp=now()
+        val previousEvidence="visit-evidence:${previous.recordId}:$stamp";val visitEvidence="visit-evidence:${visit.recordId}:$stamp"
+        repo.save("personalRecords",personal("VisitEvidenceSnapshot",fields("visitId" to p(previous.recordId),"rawVisit" to previous.raw(),"capturedFor" to p("MERGE"),"capturedAt" to p(stamp)),recordId=previousEvidence,source="correction",timestamp=stamp))
+        repo.save("personalRecords",personal("VisitEvidenceSnapshot",fields("visitId" to p(visit.recordId),"rawVisit" to visit.raw(),"capturedFor" to p("MERGE"),"capturedAt" to p(stamp)),recordId=visitEvidence,source="correction",timestamp=stamp))
+        val merged=previous.raw().changed("data" to p.changed("end" to p(end),"durationMin" to p(java.time.Duration.between(java.time.Instant.parse(p.text("start")),java.time.Instant.parse(end)).toMinutes()),"mergedVisitIds" to p(visit.recordId),"correctionSource" to p("JAMES_CORRECTION")),"updatedAt" to p(stamp))
+        val superseded=visit.raw().changed("data" to v.changed("supersededByVisitId" to p(previous.recordId),"correctionSource" to p("JAMES_CORRECTION"),"supersededAt" to p(stamp)),"updatedAt" to p(stamp))
+        repo.save(previous.store,merged,previous.rawJson);repo.save(visit.store,superseded,visit.rawJson)
+        repo.save("personalRecords",personal("VisitCorrection",fields("visitId" to p(visit.recordId),"action" to p("MERGED_INTO"),"targetVisitId" to p(previous.recordId),"source" to p("JAMES_CORRECTION"),"previousRawEvidenceId" to p(visitEvidence),"targetRawEvidenceId" to p(previousEvidence),"reversible" to p(true)),source="manual",timestamp=stamp));message.value="Visits merged; original evidence retained."
     }
     fun splitVisit(visit:StoredRecord)=action {
         val d=visit.data();val start=d.text("start").takeIf(::validTime)?.let(java.time.Instant::parse)?:return@action;val end=d.text("end").takeIf(::validTime)?.let(java.time.Instant::parse)?:return@action
         if(java.time.Duration.between(start,end).toMinutes()<10)return@action
         val mid=start.plusSeconds(java.time.Duration.between(start,end).seconds/2);val stamp=now()
+        val evidenceId="visit-evidence:${visit.recordId}:$stamp"
+        repo.save("personalRecords",personal("VisitEvidenceSnapshot",fields("visitId" to p(visit.recordId),"rawVisit" to visit.raw(),"capturedFor" to p("SPLIT"),"capturedAt" to p(stamp)),recordId=evidenceId,source="correction",timestamp=stamp))
         val first=visit.raw().changed("data" to d.changed("end" to p(mid.toString()),"durationMin" to p(java.time.Duration.between(start,mid).toMinutes()),"correctionSource" to p("JAMES_CORRECTION")),"updatedAt" to p(stamp))
         val second=personal("PlaceVisit",d.changed("start" to p(mid.toString()),"end" to p(end.toString()),"durationMin" to p(java.time.Duration.between(mid,end).toMinutes()),"splitFromVisitId" to p(visit.recordId),"correctionSource" to p("JAMES_CORRECTION")),source="manual",timestamp=mid.toString())
-        repo.save(visit.store,first,visit.rawJson);repo.save("personalRecords",second);message.value="Visit split at its midpoint; edit either time if needed."
+        repo.save(visit.store,first,visit.rawJson);repo.save("personalRecords",second);repo.save("personalRecords",personal("VisitCorrection",fields("visitId" to p(visit.recordId),"action" to p("SPLIT"),"targetVisitId" to p(second.text("id")),"source" to p("JAMES_CORRECTION"),"rawEvidenceId" to p(evidenceId),"reversible" to p(true)),source="manual",timestamp=stamp));message.value="Visit split at its midpoint; original evidence retained."
     }
     fun logDifficultInteraction(type:String,person:String?=null)=action {
         val subtype=runCatching {uk.co.james.state.DifficultInteractionType.valueOf(type)}.getOrElse {error("Unknown interaction type.")}
@@ -350,7 +362,7 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
         if(dialog.value !in listOf("Template"))raw=raw.changed("updatedAt" to p(now()))
         if(dialog.value=="Routine")require(raw.obj("data").text("title").isNotBlank()){"Give the routine a name."}
         if(dialog.value=="MoodEntry")require(uk.co.james.state.stateChoices.any {(key,choices)->raw.obj("data").text(key) in choices}) {"Choose at least one signal. Leave the others blank."}
-        if(dialog.value=="Event")require(raw.obj("data").text("title").isNotBlank()) {"Describe the moment."}
+        if(dialog.value in listOf("Event","LifeFactActivity"))require(raw.obj("data").text("title").isNotBlank()) {"Describe the moment."}
         val store=saved.get<String>("editor-store")?:"personalRecords"
         val original=saved.get<String>("editor-original")?.ifBlank {null}?.let {json.parseToJsonElement(it).jsonObject}
         repo.save(store,raw,original?.toString())

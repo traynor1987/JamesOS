@@ -2,6 +2,8 @@ package uk.co.james.location
 
 import java.time.Duration
 import java.time.Instant
+import uk.co.james.core.text
+import uk.co.james.database.StoredRecord
 
 /** Pure, deterministic visit rules.  Android callbacks only feed the current anchor;
  * history is never replayed on a new fix. */
@@ -27,3 +29,7 @@ internal fun inferredOwnership():TimeOwnership = TimeOwnership.UNKNOWN
 
 internal fun choosePlace(matches:List<PlaceMatch>):PlaceMatch? =
     matches.filter { it.distanceMetres <= it.radiusMetres + 100f }.minByOrNull { it.distanceMetres }
+
+/** A correction changes the current interpretation, never erases source evidence. */
+internal fun StoredRecord.isSupersededVisit():Boolean = kind=="PlaceVisit" && data().text("supersededByVisitId").isNotBlank()
+internal fun authoritativeVisits(rows:List<StoredRecord>):List<StoredRecord> = rows.filter {it.kind=="PlaceVisit"&&!it.isSupersededVisit()}

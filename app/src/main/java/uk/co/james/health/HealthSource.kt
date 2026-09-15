@@ -20,22 +20,8 @@ import kotlinx.coroutines.sync.withLock
 data class HealthStatus(val available: Boolean,val granted: Set<String>,val explanation: String)
 class HealthSource(private val context: Context,private val repo: JamesRepository) {
     private val syncMutex=Mutex()
-    val types: Map<String,KClass<out Record>> = linkedMapOf(
-        "Steps" to StepsRecord::class,
-        "Sleep" to SleepSessionRecord::class,
-        "Exercise" to ExerciseSessionRecord::class,
-        "Heart rate" to HeartRateRecord::class,
-        "Resting heart rate" to RestingHeartRateRecord::class,
-        "HRV" to HeartRateVariabilityRmssdRecord::class,
-        "Blood oxygen" to OxygenSaturationRecord::class,
-        "Respiratory rate" to RespiratoryRateRecord::class,
-        "Distance" to DistanceRecord::class,
-        "Calories" to TotalCaloriesBurnedRecord::class,
-        "Weight" to WeightRecord::class,
-        "Nutrition" to NutritionRecord::class,
-        "Hydration" to HydrationRecord::class
-    )
-    fun permissions(selected: Set<String>): Set<String> = selected.mapNotNull { types[it] }.map { HealthPermission.getReadPermission(it) }.toSet()
+    val types: Map<String,KClass<out Record>> = HealthCapabilities.byLabel.mapValues {it.value.type}
+    fun permissions(selected: Set<String>): Set<String> = selected.mapNotNull { HealthCapabilities.byLabel[it]?.readPermission }.toSet()
     private fun client() = HealthConnectClient.getOrCreate(context)
     suspend fun status(): HealthStatus {
         val status=HealthConnectClient.getSdkStatus(context)

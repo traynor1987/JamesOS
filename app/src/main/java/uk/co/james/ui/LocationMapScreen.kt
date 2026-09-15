@@ -14,13 +14,14 @@ import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import uk.co.james.core.*
 import uk.co.james.database.StoredRecord
+import uk.co.james.location.authoritativeVisits
 
 private enum class MapPinType { CURRENT, VISIT, UNKNOWN_VISIT, KNOWN_PLACE }
 private data class VisitPin(val id:String,val title:String,val subtitle:String,val latitude:Double,val longitude:Double,val type:MapPinType)
 
 @Composable fun LocationMapScreen(vm:JamesViewModel,records:List<StoredRecord>) {
     val range by vm.locationMapRange.collectAsState()
-    val visits=remember(records) { records.filter {it.kind=="PlaceVisit"}.sortedByDescending {it.data().text("start",it.timestamp)} }
+    val visits=remember(records) { authoritativeVisits(records).sortedByDescending {it.data().text("start",it.timestamp)} }
     val completedPins=remember(visits) { visits.mapNotNull { visit->
         val d=visit.data();val lat=d.number("latitude");val lon=d.number("longitude")
         if(lat==0.0&&lon==0.0)null else VisitPin(visit.recordId,d.text("title","Unknown place"),"${d.text("start").take(16).replace('T',' ')} · ${d.number("durationMin").toLong()}m · ${d.text("ownership","UNKNOWN")} · ${d.text("ownershipSource","INFERRED")}",lat,lon,if(d.text("title","Unknown place")=="Unknown place")MapPinType.UNKNOWN_VISIT else MapPinType.VISIT)

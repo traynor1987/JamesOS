@@ -4,6 +4,7 @@ import uk.co.james.database.StoredRecord
 import uk.co.james.core.*
 data class Moment(val id: String,val date: String,val timestamp: String,val title: String,val source: String,val detail: String,val approximate: Boolean,val record: StoredRecord)
 fun timeline(records: List<StoredRecord>): List<Moment> = records.mapNotNull { r ->
+    if(r.kind=="PlaceVisit"&&r.data().text("supersededByVisitId").isNotBlank()) return@mapNotNull null
     val raw=r.raw();val d=r.data()
     when {
         r.store=="loggedEvents" -> Moment(r.recordId,r.localDate,r.timestamp,raw.text("title"),"Routines · RUT","${raw.number("points").toLong()} points · ${raw.text("note")}",raw.text("timeAccuracy")=="approximate",r)

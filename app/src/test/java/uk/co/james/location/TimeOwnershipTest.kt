@@ -12,6 +12,12 @@ class TimeOwnershipTest {
         val summary=ownershipSummary(listOf(OwnershipInterval(instant("2026-09-10T10:00:00Z"),instant("2026-09-10T11:00:00Z"),TimeOwnership.UNKNOWN)))
         assertEquals(0,summary.autonomousMinutes);assertEquals(60,summary.unknownMinutes)
     }
+    @Test fun no_intervals_are_no_evidence_not_confirmed_zero_personal_time() {
+        val summary=ownershipSummary(emptyList())
+        assertEquals(0,summary.autonomousMinutes)
+        assertEquals(0,summary.classifiedMinutes)
+        assertEquals(0,summary.unknownMinutes)
+    }
     @Test fun interruption_fragments_personal_time_and_prevents_double_counting() {
         val summary=ownershipSummary(listOf(
             OwnershipInterval(instant("2026-09-10T10:00:00Z"),instant("2026-09-10T10:18:00Z"),TimeOwnership.AUTONOMOUS),

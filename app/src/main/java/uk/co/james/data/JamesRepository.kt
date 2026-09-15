@@ -17,6 +17,7 @@ import uk.co.james.state.wellbeingRecord
 import uk.co.james.state.BodyBattery
 import uk.co.james.state.bodyBatteryRecord
 import uk.co.james.calibration.*
+import uk.co.james.location.reconstructLegacyVisits
 import java.io.File
 import java.time.*
 import java.util.concurrent.ConcurrentHashMap
@@ -62,7 +63,7 @@ class JamesRepository(val context: Context, val db: JamesDatabase) {
     private fun archive(text: String,purpose: String): ArchiveRecord {val stamp=now();val name=id();val prefix=if(purpose=="staged")"staged-" else "archive-";val f=File(archiveDir,"$prefix$name.json");val temp=File(archiveDir,"$prefix$name.tmp");temp.outputStream().use { it.write(text.toByteArray());it.flush() };check(temp.renameTo(f)) { "Unable to preserve backup." };return ArchiveRecord(name,f.absolutePath,sha(text.toByteArray()),stamp,purpose)}
     suspend fun import(plan: ImportPlan,expected: String): MergeResult = withContext(Dispatchers.IO) {
         val original=archive(plan.original,"original-import")
-        db.withTransaction {
+        val result=db.withTransaction {
             val all=dao.all();check(BackupCodec.fingerprint(all)==expected) { "Data changed since preview. Preview again." }
             val merge=BackupCodec.merge(plan,all)
             val before=archive(BackupCodec.export(all).toString(),"before-import")
@@ -70,6 +71,10 @@ class JamesRepository(val context: Context, val db: JamesDatabase) {
             dao.importHistory(ImportHistory(id(),plan.source,now(),plan.rows.size,merge.additions.size,merge.duplicates,merge.conflicts.size,"",original.id))
             merge
         }
+        // Imported legacy records may be older than the local watermark. This
+        // is the only deliberate full compatibility pass; normal startup stays incremental.
+        reconstructLegacyVisits(afterImport=true)
+        result
     }
     suspend fun exportTo(uri: Uri) = withContext(Dispatchers.IO) {
         // Include originals as nested portable JSON; the entire export can be restored or originals recovered separately.

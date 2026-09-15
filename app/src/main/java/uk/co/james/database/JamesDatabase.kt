@@ -41,6 +41,7 @@ interface JamesDao {
     /** Explicit one-off compatibility read.  It is intentionally limited to the
      * legacy context kinds, never a replay of the whole records table. */
     @Query("SELECT * FROM records WHERE store='personalRecords' AND kind IN ('ContextPeriod','LocationEvent') ORDER BY timestamp") suspend fun legacyVisitEvidence():List<StoredRecord>
+    @Query("SELECT * FROM records WHERE store='personalRecords' AND kind IN ('ContextPeriod','LocationEvent') AND updatedAt > :after ORDER BY updatedAt, timestamp") suspend fun legacyVisitEvidenceUpdatedAfter(after:String):List<StoredRecord>
     @Query("SELECT * FROM records WHERE kind='CalibrationEvent' AND algorithmId=:algorithmId AND timestamp BETWEEN :start AND :end ORDER BY timestamp DESC LIMIT :limit") suspend fun calibrationEvents(algorithmId:String,start:String,end:String,limit:Int=1000):List<StoredRecord>
     @Query("SELECT * FROM records WHERE kind='CalibrationCandidate' AND algorithmId=:algorithmId AND candidateStatus IN (:statuses) ORDER BY timestamp DESC LIMIT :limit") suspend fun calibrationCandidates(algorithmId:String,statuses:List<String>,limit:Int=100):List<StoredRecord>
     @Query("SELECT * FROM records WHERE algorithmId=:algorithmId AND kind IN (:kinds) ORDER BY timestamp DESC LIMIT :limit") suspend fun calibrationRows(algorithmId:String,kinds:List<String>,limit:Int=1000):List<StoredRecord>

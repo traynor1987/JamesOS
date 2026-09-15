@@ -272,7 +272,14 @@ private fun stressLevel(score:Double)=when {score<20->"Very low";score<40->"Low"
     val clock=foregroundMinute()
     val date by vm.date.collectAsStateWithLifecycle()
     var source by rememberSaveable {mutableStateOf("all")}
-    val rawEntries=timeline(records).filter {it.date==date&&(source=="all"||it.source.contains(source)||(source=="whoop"&&it.record.data().text("provider").contains("whoop")))}
+    val selected=runCatching {LocalDate.parse(date)}.getOrElse {LocalDate.now()}
+    // Select the James Day containing local noon. The bounded three-day route
+    // window supplies sleep/boundary context without reviving historical scans.
+    val day=remember(records,selected) { jamesDayWindow(records,selected.atTime(12,0).atZone(ZoneId.systemDefault()).toInstant(),ZoneId.systemDefault()) }
+    val rawEntries=timeline(records).filter {entry->
+        val at=entry.timestamp.takeIf(::validTime)?.let(Instant::parse)
+        at!=null&&at>=day.start&&at<day.end&&(source=="all"||entry.source.contains(source)||(source=="whoop"&&entry.record.data().text("provider").contains("whoop")))
+    }
     // Health Connect can carry the same provider event as a direct API. Keep one
     // compact timeline moment while the database retains both authoritative rows.
     val entries=rawEntries.groupBy {e->if(e.record.kind=="HealthMetric")runCatching {"health:${e.record.data().text("metric")}:${Instant.parse(e.timestamp).epochSecond/300}"}.getOrDefault(e.id)else e.id}
@@ -280,7 +287,7 @@ private fun stressLevel(score:Double)=when {score<20->"Very low";score<40->"Low"
         .sortedByDescending {it.timestamp}
     LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(horizontal=16.dp,vertical=18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
         item {
-            PageTitle("Timeline","THE SHAPE OF YOUR DAY")
+            PageTitle("Timeline","JAMES DAY · ${displayDate(day.displayDate)}")
             Spacer(Modifier.height(6.dp))
             Text("Your places, moments and meaningful health changes. Frequent passive readings are grouped.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             DateControl(date,vm::date)
@@ -308,7 +315,7 @@ private fun stressLevel(score:Double)=when {score<20->"Very low";score<40->"Low"
             }
         }
         if(entries.isEmpty())item {JamesCard("No moments recorded"){Muted("Choose another date, import your history or add a moment.")}}
-        item {JamesCard("24 Hour Breakdown"){timeBreakdown(records,date,clock=clock).forEach {(k,v)->Text("$k · ${duration(v)}")}}}
+        item {JamesCard("James Day breakdown"){timeBreakdown(records,day.displayDate,clock=clock).forEach {(k,v)->Text("$k · ${duration(v)}")}}}
     }
 }
 @Composable fun MeScreen(vm:JamesViewModel,records:List<StoredRecord>) {

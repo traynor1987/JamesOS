@@ -217,7 +217,7 @@ import kotlin.math.roundToInt
     val activity by vm.activityEnabled.collectAsStateWithLifecycle()
     var name by rememberSaveable {mutableStateOf("")}
     var category by rememberSaveable {mutableStateOf("Home")}
-    val visits=records.filter {it.kind=="PlaceVisit"}.sortedByDescending {it.timestamp}
+    val visits=uk.co.james.location.authoritativeVisits(records).sortedByDescending {it.timestamp}
     val savedPlaces=records.filter {it.kind=="Place"}
     val unknownVisits=visits.filter {visit->visit.data().text("title","Unknown place").let {it.isBlank()||it=="Unknown place"}}
     val current=records.firstOrNull {it.kind=="LocationAnchor"}

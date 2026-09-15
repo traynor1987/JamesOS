@@ -29,13 +29,25 @@ internal fun reconstructedVisit(record:StoredRecord):kotlinx.serialization.json.
     ),id,"legacy_reconstruction",start.toString()).changed("externalId" to p(id),"confidence" to p(45))
 }
 
-/** Safe at every launch/import: deterministic IDs plus replace semantics mean no duplicates. */
-suspend fun JamesRepository.reconstructLegacyVisits():Int {
+private const val LEGACY_VISIT_RECONSTRUCTION_VERSION="legacy-visit-reconstruction-v2"
+
+/**
+ * Versioned and idempotent. Startup processes only evidence newer than its
+ * watermark; import deliberately requests one bounded reconciliation pass.
+ * Deterministic Visit IDs still protect against duplicates after retry/crash.
+ */
+suspend fun JamesRepository.reconstructLegacyVisits(afterImport:Boolean=false):Int {
+    val state=dao.get("metadata",LEGACY_VISIT_RECONSTRUCTION_VERSION)
+    val watermark=state?.raw()?.obj("value")?.text("lastUpdatedAt").orEmpty()
+    val evidence=if(afterImport||watermark.isBlank()) dao.legacyVisitEvidence()
+    else dao.legacyVisitEvidenceUpdatedAfter(watermark)
     var created=0
-    dao.legacyVisitEvidence().forEach { evidence ->
+    evidence.forEach { evidence ->
         val visit=reconstructedVisit(evidence)?:return@forEach
         if(dao.get("personalRecords",visit.text("id"))==null) created++
         save("personalRecords",visit)
     }
+    val newest=evidence.maxOfOrNull {it.updatedAt.ifBlank {it.timestamp}} ?: watermark
+    if(newest.isNotBlank()) save("metadata",fields("key" to p(LEGACY_VISIT_RECONSTRUCTION_VERSION),"value" to fields("version" to p(2),"lastUpdatedAt" to p(newest),"lastRunAt" to p(now()),"mode" to p(if(afterImport)"IMPORT_RECONCILIATION" else "INCREMENTAL"))))
     return created
 }

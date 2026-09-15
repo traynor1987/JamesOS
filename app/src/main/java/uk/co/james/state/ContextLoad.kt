@@ -21,7 +21,10 @@ enum class ContextLoadLabel { VERY_LOW, LOW, MODERATE, HIGH, VERY_HIGH }
 enum class DifficultInteractionType { RAISED_VOICE, DISMISSED, CONTROLLING, ARGUMENT, INSULT_HOSTILITY, OTHER }
 data class ContextPeriod(val id:String,val start:Instant,val end:Instant?,val visitType:VisitType,val placeId:String?,val placeName:String?,val source:String,val jamesDayId:String?)
 data class ContextLoadSummary(val score:Int,val label:ContextLoadLabel,val active:ContextPeriod?,val difficultActive:Boolean,val difficultMinutes:Long,val explanation:String,val confidence:String)
-data class LifeBalanceWindow(val days:Int,val score:Int?,val personalMinutes:Long,val obligationMinutes:Long,val constrainedMinutes:Long,val workMinutes:Long,val unknownMinutes:Long,val classifiedMinutes:Long,val difficultMinutes:Long,val positiveActivities:Int,val recordedDays:Int,val interruptions:Int,val interruptionMinutes:Long,val longestAutonomousBlockMinutes:Long)
+data class LifeBalanceWindow(val days:Int,val score:Int?,val personalMinutes:Long,val obligationMinutes:Long,val constrainedMinutes:Long,val workMinutes:Long,val unknownMinutes:Long,val classifiedMinutes:Long,val difficultMinutes:Long,val positiveActivities:Int,val recordedDays:Int,val interruptions:Int,val interruptionMinutes:Long,val longestAutonomousBlockMinutes:Long,val relevantMinutes:Long=0,val ownershipCoveragePercent:Int=0) {
+    /** Time with no defensible ownership interval is unclassified, not silently zero Personal. */
+    val unclassifiedMinutes:Long get()=(relevantMinutes-(classifiedMinutes+unknownMinutes)).coerceAtLeast(0)
+}
 data class LifeBalanceSummary(val current:LifeBalanceWindow,val days7:LifeBalanceWindow,val days14:LifeBalanceWindow,val days28:LifeBalanceWindow,val trend:String,val autonomy:String,val helping:List<String>,val hurting:List<String>)
 private fun StoredRecord.fieldTime(key:String)=data().text(key).takeIf(::validTime)?.let {Instant.parse(it)}
 private fun StoredRecord.period():ContextPeriod? {if(kind!="ContextPeriod")return null;val start=fieldTime("start")?:return null;return ContextPeriod(recordId,start,fieldTime("end"),runCatching {VisitType.valueOf(data().text("visitType","UNKNOWN"))}.getOrDefault(VisitType.UNKNOWN),data().text("placeId").ifBlank {null},data().text("placeName").ifBlank {null},source,data().text("jamesDayId").ifBlank {null})}
@@ -43,15 +46,15 @@ private fun window(rows:List<StoredRecord>,clock:Instant,days:Int):LifeBalanceWi
  // main-sleep end), never a midnight reset. Historical intervals are clipped
  // to that bounded window before ownership arithmetic.
  val from=jamesDayWindow(rows,clock).start.minus(Duration.ofDays((days-1).toLong()));val ledger=ownershipSummary(ownershipIntervals(rows,from,clock));val ps=rows.mapNotNull {it.period()}.filter {it.start<clock&&(it.end?:clock)>from}
- val personal=ledger.autonomousMinutes;val obligation=ledger.committedMinutes
+ val personal=ledger.autonomousMinutes;val obligation=ledger.committedMinutes;val relevant=Duration.between(from,clock).toMinutes().coerceAtLeast(0);val covered=ledger.classifiedMinutes+ledger.unknownMinutes;val coverage=if(relevant==0L)0 else ((covered*100)/relevant).toInt().coerceIn(0,100)
  val difficult=rows.filter {it.kind=="ContextDifficultInterval"}.sumOf {r->r.fieldTime("start")?.let {overlap(it,r.fieldTime("end")?:clock,from,clock)}?:0}
  val activities=rows.count {it.kind=="LifeFactActivity"&&it.timestamp.takeIf(::validTime)?.let {t->Instant.parse(t) in from..clock}==true}
  val daysRecorded=ps.map {it.start.atZone(ZoneId.systemDefault()).toLocalDate()}.distinct().size
  // Unknown is evidence quality, never a negative conclusion. Activity count is
  // supporting context only and cannot create personal-time credit.
- if(ledger.classifiedMinutes<120)return LifeBalanceWindow(days,null,personal,obligation,ledger.constrainedMinutes,ledger.workMinutes,ledger.unknownMinutes,ledger.classifiedMinutes,difficult,activities,daysRecorded,ledger.interruptions,ledger.interruptionMinutes,ledger.longestAutonomousBlockMinutes)
+ if(ledger.classifiedMinutes<120)return LifeBalanceWindow(days,null,personal,obligation,ledger.constrainedMinutes,ledger.workMinutes,ledger.unknownMinutes,ledger.classifiedMinutes,difficult,activities,daysRecorded,ledger.interruptions,ledger.interruptionMinutes,ledger.longestAutonomousBlockMinutes,relevant,coverage)
  val baseScore=(50+(personal/60.0*1.6).coerceAtMost(18.0)-(obligation/60.0*.65).coerceAtMost(12.0)-(ledger.constrainedMinutes/60.0*1.0).coerceAtMost(14.0)-(difficult/60.0*1.4).coerceAtMost(18.0)).roundToInt().coerceIn(0,100)
  val score=uk.co.james.calibration.JamesCalibrationEngine.applyActiveScore(baseScore,rows,"life_balance")
- return LifeBalanceWindow(days,score,personal,obligation,ledger.constrainedMinutes,ledger.workMinutes,ledger.unknownMinutes,ledger.classifiedMinutes,difficult,activities,daysRecorded,ledger.interruptions,ledger.interruptionMinutes,ledger.longestAutonomousBlockMinutes)
+ return LifeBalanceWindow(days,score,personal,obligation,ledger.constrainedMinutes,ledger.workMinutes,ledger.unknownMinutes,ledger.classifiedMinutes,difficult,activities,daysRecorded,ledger.interruptions,ledger.interruptionMinutes,ledger.longestAutonomousBlockMinutes,relevant,coverage)
 }
 fun lifeBalance(rows:List<StoredRecord>,clock:Instant=Instant.now()):LifeBalanceSummary {val a=window(rows,clock,7);val b=window(rows,clock,14);val c=window(rows,clock,28);val trend=when {a.score==null->"LEARNING";b.score==null->"STEADY";a.score-b.score/2>=5->"IMPROVING";a.score-b.score/2<=-5->"BELOW USUAL";else->"STEADY"};val help=buildList {if(a.personalMinutes>=60L)add("Confirmed personal time");if(a.constrainedMinutes==0L&&a.classifiedMinutes>=180L)add("No confirmed constrained time")};val hurt=buildList {if(a.classifiedMinutes>=120L&&a.personalMinutes<60L)add("Low confirmed personal time");if(a.constrainedMinutes>=120L)add("Constrained time");if(a.difficultMinutes>0L)add("Difficult context")};return LifeBalanceSummary(a,a,b,c,trend,if(a.score==null)"LEARNING" else if(a.personalMinutes<60L)"LOW PERSONAL TIME" else "STEADY",help,hurt)}
