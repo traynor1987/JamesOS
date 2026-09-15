@@ -245,6 +245,8 @@ Passive location tracking and explicit calibration have different quality requir
 
 Failures are factual rather than blaming the environment: stale fix age, insufficient accuracy, missing precise permission, unavailable provider or precise-fix timeout. Places diagnostics show latest passive-fix age, accuracy and provider; calibration status shows the source/accuracy/age of the fix actually saved. Tests cover stale/inaccurate passive fixes replaced by a precise fix, timeout, provider failure and an already-fresh accurate anchor that saves without a second sensor request.
 
+**Release:** phone **0.3.215** (Wear remains **0.2.2**) was published from main commit `31366f8439953bc0e26cca78f87ae8516072b366` after GitHub Actions validation run `35000334491` passed both validation and instrumentation. Protected release run `35001378354` rebuilt and verified the permanent signer for both APKs, then published `v0.3.215` with phone APK/AAB, Wear APK and checksums. Do not change signing identity.
+
 ## Unified context and time ownership model
 
 The prior UI mixed legacy `ContextPeriod` values (PERSONAL/NEUTRAL/OBLIGATION), activity counts, and Visit ownership, producing contradictory totals. The current authority is deliberately separated: **Visit = when/where; Context = situation; Activity = what James did; Time Ownership = who controlled the time; Interruption = what changed it; Life Balance = a cautious interpretation.**

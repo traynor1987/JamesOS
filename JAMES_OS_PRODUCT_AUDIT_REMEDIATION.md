@@ -43,3 +43,7 @@
 ## Acceptance focus
 
 The remaining work is real-device confirmation rather than another code path: exercise correction reversal, an overnight James Day and provider freshness wording on a populated installation. These are acceptance checks, not permission to reintroduce broad record observation or fabricate ownership evidence.
+
+## Calibration acceptance release
+
+The explicit saved-place calibration correction was verified by GitHub Actions run `35000334491` (validation and emulator instrumentation) on main commit `31366f8439953bc0e26cca78f87ae8516072b366`. Signed phone release **0.3.215** was published by protected release run `35001378354`; Wear intentionally remains **0.2.2**. The next acceptance check is real-device: use Save current place with a stale or inaccurate passive anchor and confirm the one-shot precise-location state and factual failure detail when a fix cannot meet ±30m.
