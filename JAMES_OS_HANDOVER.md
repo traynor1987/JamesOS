@@ -307,6 +307,14 @@ Phone **0.3.216** and Wear **0.2.3** were published from main commit `66c029be4d
 - Ownership coverage is explicit alongside the canonical ownership ledger. Life Balance and Today use that shared ledger and must retain `UNKNOWN != zero` / `no evidence != low Personal time` behaviour.
 - Current deferred work remains: adaptive Wear detailed sampling, Calendar/weather/screen time, Time Ownership trends/correlations, predictive alerts, Nova AI and Shift Tracker sender Part 2. None are authorised as a substitute for validating this foundation on a populated device.
 
+### Route loading and cold-start truth (2026-09-15)
+
+The Insights → Today real-device failure is treated as a route/lifecycle problem, separately from the Insights explainability wall. `JamesViewModel.screenRecords` now emits `RouteRecordsState(loaded=false)` before each destination's new bounded Room query emits. Today renders **Restoring James OS** during that boundary; it never consumes Insights' old snapshot or calls an as-yet-unloaded empty list an empty installation. A cheap Room `EXISTS` readiness query determines whether user history exists without loading historical rows.
+
+The neutral 50/35/50/20-style values produced by Right Now and wellbeing engines are mathematical priors, not observations. `hasWellbeingEvidence` and `hasRightNowEvidence` gate both presentation and derived persistence: metadata/calibration records alone cannot create wellbeing snapshots, calibration evidence, timeline EnergySnapshots or apparent current facts. On a truly empty install Today shows learning/unknown values and the import entry only after readiness is known; populated state remains visible once Room has loaded.
+
+Insights diagnostics no longer construct a single unbounded `Inputs used` string on route entry. It shows count/latest input first, then at most the newest twelve rows on explicit request. This is deliberately a separate UX/performance guard; do not state that it was the crash root without an Android stack trace. `RouteRecordsStateTest`, `EvidenceReadinessTest`, and `WellbeingDiagnosticsPresentationTest` protect the transition, prior boundary and bounded diagnostics.
+
 ### Narrative and freshness continuation
 
 - Timeline is a bounded **James Day** presentation. A completed Visit now narrates linked `ContextPeriod`, `LifeFactActivity`, `OwnershipPeriod` and `VisitInterruption` evidence inside its visit card, while the stored records remain independently editable and exported. Do not delete raw semantic rows merely to keep Timeline quiet.
