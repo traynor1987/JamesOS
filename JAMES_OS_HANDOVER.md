@@ -288,6 +288,8 @@ The approved James OS identity is the lime Focus/J power mark on a near-black fi
 
 Primary bottom navigation is now exactly **Today · Timeline · Me · Insights · Settings**. Settings opens the existing organised Settings home; it is not a second settings system. The redundant global top-bar gear was removed, while contextual controls remain where they configure a specific feature. Nova remains preserved in code as deferred/experimental architecture but is not a primary destination until it has a real provider, purpose and privacy contract. Package ID, app label and permanent signing identity are unchanged.
 
+Phone **0.3.216** and Wear **0.2.3** were published from main commit `66c029be4d8ca46b3aa395b465c77a5a2d7a01dd` after validation run `35011695984` passed its public phone build/lint/unit checks and instrumentation. Protected release run `35012426000` rebuilt phone and Wear, verified the unchanged permanent certificate, and published APK/AAB, signature reports and SHA-256 checksums in `v0.3.216`.
+
 ## Product audit remediation (2026-09-15)
 
 `JAMES_OS_PRODUCT_AUDIT.md` remains the historical source-first audit snapshot. Its implementation-status companion is **`JAMES_OS_PRODUCT_AUDIT_REMEDIATION.md`**; read both before changing semantic/day architecture.
