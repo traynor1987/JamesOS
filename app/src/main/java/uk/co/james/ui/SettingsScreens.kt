@@ -16,6 +16,14 @@ import java.time.Instant
 import java.time.ZoneId
 import kotlin.math.roundToInt
 
+/** Connection and freshness are deliberately separate: an authorised provider
+ * with an old successful sync must not look like current evidence. */
+internal fun providerSyncStatus(stamp:String,now:Instant=Instant.now()):String {
+    val at=stamp.takeIf(::validTime)?.let {runCatching {Instant.parse(it)}.getOrNull()}?:return "NOT SYNCED"
+    val age=java.time.Duration.between(at,now)
+    return when {age.isNegative->"CHECKING TIME";age.toMinutes()<=30->"FRESH";age.toHours()<=24->"AGING";else->"STALE"}
+}
+
 @Composable fun SettingsScreen(vm:JamesViewModel,export:(String?)->Unit,install:()->Unit) {
     val theme by vm.theme.collectAsStateWithLifecycle()
     val compactToday by vm.compactToday.collectAsStateWithLifecycle()
@@ -126,8 +134,8 @@ import kotlin.math.roundToInt
     val whoop=records.firstOrNull {it.recordId=="source:whoop"}?.data()?.text("lastSync").orEmpty()
     val latest=records.filter {it.kind=="HealthMetric"}.groupBy {it.data().text("metric")}.mapValues {(_,items)->items.maxByOrNull {it.updatedAt.ifBlank {it.timestamp}}}.toList().sortedBy {it.first}.take(8)
     JamesCard("Data status","What James has, and where it came from") {
-        Text("Health Connect: ${health.ifBlank {"Not synced yet"}}")
-        Text("WHOOP: ${whoop.ifBlank {"Not synced yet"}}")
+        Text("Health Connect: ${providerSyncStatus(health)} · ${health.ifBlank {"Not synced yet"}}")
+        Text("WHOOP: ${providerSyncStatus(whoop)} · ${whoop.ifBlank {"Not synced yet"}}")
         Text("Watch: ${if(wear.connected)"${wear.device.ifBlank {"connected"}} · ${uk.co.james.wear.WearCompanion.age(wear.lastSeen)}" else "not connected"}")
         if(latest.isEmpty()) Muted("No health readings saved yet.") else {
             Text("Latest reading sources",style=MaterialTheme.typography.labelLarge)
@@ -160,7 +168,7 @@ import kotlin.math.roundToInt
     val cards=mutableListOf<@Composable ()->Unit>()
     cards.add {PageTitle("Connections","YOU CHOOSE WHAT JAMES CAN READ")}
     val energySettings by vm.energyTimeSettings.collectAsStateWithLifecycle()
-    cards.add {JamesCard("Health Connect",if(health.granted.isEmpty())"Not connected"else "${health.granted.size} permissions granted"){Muted(health.explanation);vm.app.health.types.keys.forEach {name->Row {Checkbox(name in selected,onCheckedChange={selected=if(it)selected+name else selected-name});Text(name)}};Button(enabled=health.available&&selected.isNotEmpty(),onClick={requestHealth(vm.app.health.permissions(selected.toSet()))}){Text("Choose health permissions")};TextButton(enabled=health.granted.isNotEmpty(),onClick={vm.healthSync()}){Text("Sync now")};TextButton(enabled=health.granted.isNotEmpty(),onClick={vm.healthDisconnect()}){Text("Disconnect")};Muted("Last sync: ${records.find {it.recordId=="source:health_connect"}?.data()?.text("lastSync")?:"Never"}");Muted("Nutrition permissions control ingestion. The Live Energy nutrition setting only controls contextual use; provenance is retained.");Muted("Automatic refresh: about every 15 minutes in the background and every 5 minutes while Today is open. Android may delay background work.");Muted("Only authorised records are read. Originating providers are retained. Imported history stays available offline.")}}
+    cards.add {JamesCard("Health Connect",if(health.granted.isEmpty())"Not connected"else "${health.granted.size} permissions granted"){Muted(health.explanation);vm.app.health.types.keys.forEach {name->Row {Checkbox(name in selected,onCheckedChange={selected=if(it)selected+name else selected-name});Text(name)}};Button(enabled=health.available&&selected.isNotEmpty(),onClick={requestHealth(vm.app.health.permissions(selected.toSet()))}){Text("Choose health permissions")};TextButton(enabled=health.granted.isNotEmpty(),onClick={vm.healthSync()}){Text("Sync now")};TextButton(enabled=health.granted.isNotEmpty(),onClick={vm.healthDisconnect()}){Text("Disconnect")};val synced=records.find {it.recordId=="source:health_connect"}?.data()?.text("lastSync").orEmpty();Muted("Last successful sync: ${providerSyncStatus(synced)} · ${synced.ifBlank {"Never"}}");Muted("Nutrition permissions control ingestion. The Live Energy nutrition setting only controls contextual use; provenance is retained.");Muted("Automatic refresh: about every 15 minutes in the background and every 5 minutes while Today is open. Android may delay background work.");Muted("Only authorised records are read. Originating providers are retained. Imported history stays available offline.")}}
     val lastSync=records.find {it.recordId=="source:health_connect"}?.data()?.text("lastSync")
     fun sourceMetrics(packageName:String)=records.filter {it.kind=="HealthMetric"&&it.source=="health_connect"&&it.data().text("provider").split(',').any {p->p.trim()==packageName}}
     listOf("Samsung Health" to "com.sec.android.app.shealth","WHOOP" to "com.whoop.android").forEach {(name,packageName)->
@@ -190,7 +198,8 @@ import kotlin.math.roundToInt
     val whoopConfigured by vm.whoopConfigured.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
     val whoop=records.firstOrNull {it.recordId=="source:whoop"}?.data()
-    cards.add {JamesCard("WHOOP API",if(!whoopConfigured)"Not connected"else when(whoop?.text("status")){"synced"->"Connected";"error"->"Needs attention";else->"Finish sign-in"}) {
+    val whoopLast=whoop?.text("lastSuccess").takeIf { !it.isNullOrBlank() }?:whoop?.text("lastSync").orEmpty()
+    cards.add {JamesCard("WHOOP API",if(!whoopConfigured)"Not connected"else when(whoop?.text("status")){"synced"->"Connected · ${providerSyncStatus(whoopLast)}";"error"->"Needs attention";else->"Finish sign-in"}) {
         Muted("Recovery, sleep, Strain, workouts and overnight Health Monitor readings: HRV, resting heart rate, respiratory rate, blood oxygen and skin temperature. History imports the last 28 days. WHOOP remains authoritative.")
         whoop?.text("lastSync")?.takeIf {it.isNotBlank()}?.let {Muted("Last sync: ${displayDate(dayOf(it))} · ${localClock(it)}")}
         whoop?.text("error")?.takeIf {it.isNotBlank()}?.let {Text(it,color=MaterialTheme.colorScheme.error)}
