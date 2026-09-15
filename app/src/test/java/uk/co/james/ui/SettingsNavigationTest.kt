@@ -1,8 +1,8 @@
 package uk.co.james.ui
 
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
+import org.junit.Test
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 
 class SettingsNavigationTest {
     @Test fun directoryHasEverySettingsDomainAndAUniqueRoute() {
