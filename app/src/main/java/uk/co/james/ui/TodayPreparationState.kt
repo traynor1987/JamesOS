@@ -27,7 +27,7 @@ internal fun <T> beginTodayPreparation(previous:TodayPreparation<T>):TodayPrepar
 /** Derived display snapshots must not feed the observer that recomputes and
  * persists those same snapshots. This stops Room invalidation feedback loops
  * while retaining the original evidence rows and all display records. */
-internal fun todayPreparationInputRecords(rows:List<StoredRecord>):List<StoredRecord> = rows.filterNot { row ->
+internal fun todayPreparationInputRecords(rows:List<StoredRecord>):List<StoredRecord> = rows.filter { it.hasUsableRawPayload() }.filterNot { row ->
     row.kind in setOf("EnergySnapshot","StateEstimate") ||
         (row.store=="metadata" && row.recordId.let { key ->
             key.startsWith("mental-wellbeing:") ||

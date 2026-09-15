@@ -18,8 +18,8 @@ object BackupCodec {
         require(root.number("schemaVersion").toInt() in if(source=="RUT") listOf(1,2) else listOf(1)) { "Unsupported backup schema." }
         val data=root["data"] as? JsonObject ?: error("Missing backup data.");val required=if(source=="RUT") rutStores else backupStores
         required.forEach { require(data[it] is JsonArray) { "Incomplete backup: $it" } }
-        val rows=required.flatMap { store ->val entries=data.array(store).map { it as? JsonObject ?: error("Invalid $store row.") };require(entries.map { keyFor(store,it) }.let { ids -> ids.all { it.isNotBlank() } && ids.distinct().size==ids.size }) { "Invalid or duplicate $store ID." };entries.forEach { validateRow(store,it) };entries.map { StoredRecord.from(store,it) }}
-        Ledger.validate(rows.filter { it.store=="loggedEvents" }.map { it.raw() });val dates=rows.map { it.localDate }.filter { validDate(it) }.sorted()
+        val rows=required.flatMap { store ->val entries=data.array(store).map { it as? JsonObject ?: error("Invalid $store row.") };require(entries.map { keyFor(store,it) }.let { ids -> ids.all { it.isNotBlank() } && ids.distinct().size==ids.size }) { "Invalid or duplicate $store ID." };entries.forEach { validateRow(store,it) };entries.map { StoredRecord.from(store,it) }}+quarantinedRows(root)
+        Ledger.validate(rows.filter { it.store=="loggedEvents"&&it.hasUsableRawPayload() }.map { it.raw() });val dates=rows.map { it.localDate }.filter { validDate(it) }.sorted()
         return ImportPlan(source,rows,text,rows.count { it.store=="eventTemplates" || it.kind=="Routine" },rows.count { it.store=="loggedEvents" || it.kind=="RoutineCompletion" },if(dates.isEmpty()) "No dated entries" else "${dates.first()} — ${dates.last()}",sha(text.toByteArray()))
     }
     fun validateRow(store: String, r: JsonObject) {
@@ -64,12 +64,31 @@ object BackupCodec {
     }
     fun merge(plan: ImportPlan, current: List<StoredRecord>): MergeResult {
         val existing=current.associateBy { it.store to it.recordId };val additions=mutableListOf<StoredRecord>();val conflicts=mutableListOf<String>();var duplicates=0
-        val currentActive=current.filter {it.kind=="CalibrationProfile"&&it.data().flag("active")}.map {it.data().text("algorithmId")}.toSet();val newestImportedActive=plan.rows.filter {it.kind=="CalibrationProfile"&&it.data().flag("active")}.groupBy {it.data().text("algorithmId")}.mapValues {(_,rows)->rows.maxByOrNull {it.data().text("activatedAt",it.timestamp)}?.recordId}
+        val currentActive=current.filter {it.hasUsableRawPayload()&&it.kind=="CalibrationProfile"&&it.data().flag("active")}.map {it.data().text("algorithmId")}.toSet();val newestImportedActive=plan.rows.filter {it.hasUsableRawPayload()&&it.kind=="CalibrationProfile"&&it.data().flag("active")}.groupBy {it.data().text("algorithmId")}.mapValues {(_,rows)->rows.maxByOrNull {it.data().text("activatedAt",it.timestamp)}?.recordId}
         plan.rows.forEach { incomingOriginal ->val algorithm=incomingOriginal.data().text("algorithmId");val neutralize=incomingOriginal.kind=="CalibrationProfile"&&incomingOriginal.data().flag("active")&&(algorithm in currentActive||newestImportedActive[algorithm]!=incomingOriginal.recordId);val incoming=if(neutralize)StoredRecord.from(incomingOriginal.store,incomingOriginal.raw().changed("data" to incomingOriginal.data().changed("active" to p(false),"importedInactiveAt" to p(now())))) else incomingOriginal;val old=existing[incoming.store to incoming.recordId]
             when {old?.rawJson==incoming.rawJson -> duplicates++;old!=null -> conflicts.add("${incoming.store}: ${incoming.recordId} (current retained)");incoming.store=="loggedEvents" && incoming.raw().text("type")=="initial" && current.any { it.store=="loggedEvents" && it.raw().text("type")=="initial" } -> conflicts.add("Starting point retained");else -> additions.add(incoming)}
         }
-        Ledger.validate((current+additions).filter { it.store=="loggedEvents" }.map { it.raw() });return MergeResult(additions,duplicates,conflicts)
+        Ledger.validate((current+additions).filter { it.store=="loggedEvents"&&it.hasUsableRawPayload() }.map { it.raw() });return MergeResult(additions,duplicates,conflicts)
     }
     fun fingerprint(rows: List<StoredRecord>) = sha(rows.sortedWith(compareBy({it.store},{it.recordId})).joinToString("\n") { it.store+":"+it.recordId+":"+it.rawJson }.toByteArray())
-    fun export(rows: List<StoredRecord>): JsonObject = fields("app" to p("JamesAndroid"),"schemaVersion" to p(1),"exportedAt" to p(now()),"data" to JsonObject(backupStores.associateWith { store -> JsonArray(rows.filter { it.store==store }.map { it.raw() }) }))
+    /** A legacy/corrupt payload is retained verbatim in a private sidecar. It
+     * must not be coerced into an empty normal record, which would silently
+     * turn missing evidence into a different record during restore. */
+    private fun quarantinedRows(root:JsonObject):List<StoredRecord> = root.array("quarantinedRows").map { element ->
+        val row=element as? JsonObject ?: error("Invalid quarantined record.")
+        val store=row.text("store");require(store in backupStores) { "Invalid quarantined record store." }
+        val id=row.text("recordId");require(id.isNotBlank()) { "Invalid quarantined record ID." }
+        val payload=row["rawJson"]
+        require(payload==null||payload is JsonNull||payload is JsonPrimitive) { "Invalid quarantined payload." }
+        StoredRecord(store,id,row.text("kind",store),row.text("source","legacy"),row.text("timestamp","1970-01-01T00:00:00Z"),row.text("localDate"),row.text("updatedAt"),row.text("externalId").ifBlank { null },(payload as? JsonPrimitive)?.contentOrNull,row.text("algorithmId").ifBlank { null },row.text("calibrationVersion").ifBlank { null },row.text("candidateStatus").ifBlank { null },row.text("jamesDayId").ifBlank { null })
+    }
+    private fun quarantinedRow(row:StoredRecord)=fields(
+        "store" to p(row.store),"recordId" to p(row.recordId),"kind" to p(row.kind),"source" to p(row.source),
+        "timestamp" to p(row.timestamp),"localDate" to p(row.localDate),"updatedAt" to p(row.updatedAt),
+        "externalId" to (row.externalId?.let(::p)?:JsonNull),"rawJson" to (row.rawJson?.let(::p)?:JsonNull),
+        "algorithmId" to (row.algorithmId?.let(::p)?:JsonNull),"calibrationVersion" to (row.calibrationVersion?.let(::p)?:JsonNull),
+        "candidateStatus" to (row.candidateStatus?.let(::p)?:JsonNull),"jamesDayId" to (row.jamesDayId?.let(::p)?:JsonNull),
+        "payloadIssue" to p(row.rawPayloadIssue().orEmpty())
+    )
+    fun export(rows: List<StoredRecord>): JsonObject = fields("app" to p("JamesAndroid"),"schemaVersion" to p(1),"exportedAt" to p(now()),"data" to JsonObject(backupStores.associateWith { store -> JsonArray(rows.filter { it.store==store&&it.hasUsableRawPayload() }.map { it.raw() }) }),"quarantinedRows" to JsonArray(rows.filterNot {it.hasUsableRawPayload()}.map(::quarantinedRow)))
 }

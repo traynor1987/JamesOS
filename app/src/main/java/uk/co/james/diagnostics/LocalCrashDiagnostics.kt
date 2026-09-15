@@ -79,7 +79,7 @@ class LocalCrashDiagnostics(private val context:Context) {
             .putString("previousRoute",previousRoute)
             .putString("uiPhase",uiPhase)
             .putString("version",version)
-            .putInt("schema",5)
+            .putInt("schema",6)
             .apply()
     }
 

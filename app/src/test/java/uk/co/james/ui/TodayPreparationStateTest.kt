@@ -40,8 +40,9 @@ class TodayPreparationStateTest {
     @Test fun derivedPersistenceRowsDoNotBecomeNewTodayPreparationInputs() {
         val source=StoredRecord.from("personalRecords",fields("id" to p("steps"),"kind" to p("HealthMetric"),"source" to p("wear"),"timestamp" to p("2026-09-15T12:00:00Z")))
         val derived=StoredRecord.from("metadata",fields("key" to p("right-now:james-day:1"),"value" to fields()))
+        val legacyMissing=StoredRecord("personalRecords","legacy-null","HealthMetric","legacy","2026-09-15T12:00:00Z","2026-09-15","2026-09-15T12:00:00Z",null,null)
 
-        assertEquals(listOf(source),todayPreparationInputRecords(listOf(source,derived)))
+        assertEquals(listOf(source),todayPreparationInputRecords(listOf(source,derived,legacyMissing)))
     }
 
     @Test fun refreshTriggerNamesSourceUpdatesButTreatsUnchangedInputsAsClockRefresh() {

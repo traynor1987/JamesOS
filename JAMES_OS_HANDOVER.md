@@ -338,6 +338,14 @@ Today must distinguish first preparation from an ordinary evidence refresh. `Tod
 
 Derived `mental-wellbeing`, `right-now`, `body-battery`, `EnergySnapshot` and `StateEstimate` rows are persisted/displayed history, not new semantic inputs. `todayPreparationInputRecords` excludes them from the bounded evidence stream used to recalculate/persist their own outputs, and `distinctUntilChanged` prevents Room invalidation feedback loops. `todayRefreshTrigger` records only a privacy-safe evidence type/source or `clock/freshness` in the current diagnostic phase; it never records values, locations or content. `TodayPreparationStateTest` covers initial/refresh/error/rapid refresh transitions and derived-row exclusion.
 
+### StoredRecord legacy payload contract (2026-09-15)
+
+The Fold production report from 0.3.220 identified the remaining Today preparation NPE: `StoredRecord.getParsedRaw` deferred a parse of a legacy `rawJson` payload until Today consumed the bounded snapshot. The parser had assumed every historical payload was a non-null JSON object. A missing, invalid, or non-object payload therefore crashed at the parse-once boundary; Insights → Today only triggered the re-evaluation and was not the root cause.
+
+Database version **6** makes that historical contract explicit. `rawJson` is nullable for legacy rows, and `MIGRATION_5_6` rebuilds only the `records` table schema while copying every row and restoring every existing index. `StoredRecord` still parses once per immutable Room row, but now classifies `MISSING_PAYLOAD`, `EMPTY_PAYLOAD`, `MALFORMED_JSON`, or `NON_OBJECT_PAYLOAD` without exposing payload data in diagnostics. Such a row remains in Room, is excluded from semantic preparation, and preserves its column identity and provenance rather than being deleted or fabricated into evidence.
+
+The Import Centre retains quarantined rows in a private `quarantinedRows` sidecar during export/import, including the original payload string or null and only structural metadata. Valid records continue through the normal schema-1 data arrays. Regression coverage includes null/non-object parsing, bounded Today preparation after Insights, v5→v6 nullable-payload migration, and quarantine backup round-trip.
+
 ### Narrative and freshness continuation
 
 - Timeline is a bounded **James Day** presentation. A completed Visit now narrates linked `ContextPeriod`, `LifeFactActivity`, `OwnershipPeriod` and `VisitInterruption` evidence inside its visit card, while the stored records remain independently editable and exported. Do not delete raw semantic rows merely to keep Timeline quiet.

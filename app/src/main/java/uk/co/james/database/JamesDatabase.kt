@@ -5,15 +5,35 @@ import kotlinx.coroutines.flow.Flow
 import uk.co.james.core.*
 import kotlinx.serialization.json.JsonObject
 
+private data class PreparedStoredRaw(val value:JsonObject,val issue:String?)
+
 @Entity(tableName = "records", primaryKeys = ["store", "recordId"], indices = [Index("kind"), Index("source"), Index("localDate"), Index("timestamp"), Index(value = ["source", "externalId"]), Index(value=["kind","timestamp"]), Index(value=["source","kind","timestamp"]), Index(value=["store","timestamp"]), Index(value=["algorithmId","timestamp"]), Index(value=["algorithmId","calibrationVersion","timestamp"]), Index(value=["candidateStatus","timestamp"]), Index(value=["jamesDayId","algorithmId","timestamp"]), Index(value=["jamesDayId","timestamp"])])
-data class StoredRecord(val store: String, val recordId: String, val kind: String, val source: String, val timestamp: String, val localDate: String, val updatedAt: String, val externalId: String?, val rawJson: String, val algorithmId:String?=null, val calibrationVersion:String?=null, val candidateStatus:String?=null, val jamesDayId:String?=null) {
+data class StoredRecord(val store: String, val recordId: String, val kind: String, val source: String, val timestamp: String, val localDate: String, val updatedAt: String, val externalId: String?, val rawJson: String?, val algorithmId:String?=null, val calibrationVersion:String?=null, val candidateStatus:String?=null, val jamesDayId:String?=null) {
     /** Room rows are immutable. Parsing once per emitted row removes the former
-     * parse-on-every-filter/map/sort behaviour without a cross-snapshot cache. */
-    @delegate:Ignore private val parsedRaw by lazy(LazyThreadSafetyMode.NONE) { json.parseToJsonElement(rawJson) as JsonObject }
-    @delegate:Ignore private val parsedData by lazy(LazyThreadSafetyMode.NONE) { parsedRaw.obj("data") }
-    fun raw(): JsonObject = parsedRaw
+     * parse-on-every-filter/map/sort behaviour without a cross-snapshot cache.
+     *
+     * Version-5 databases can contain historical rows whose payload is NULL,
+     * malformed or a non-object JSON value. Those rows retain their database
+     * identity and are quarantined from semantic calculation instead of making
+     * a lazy parse crash an unrelated route. */
+    @delegate:Ignore private val parsedRaw by lazy(LazyThreadSafetyMode.NONE) { prepareRaw(rawJson) }
+    @delegate:Ignore private val parsedData by lazy(LazyThreadSafetyMode.NONE) { parsedRaw.value.obj("data") }
+    fun raw(): JsonObject = parsedRaw.value
     fun data(): JsonObject = parsedData
+    /** Privacy-safe shape diagnostic. It never includes record payload data. */
+    fun rawPayloadIssue():String?=parsedRaw.issue
+    fun hasUsableRawPayload():Boolean=parsedRaw.issue==null
     companion object {
+        private fun prepareRaw(payload:String?):PreparedStoredRaw {
+            if(payload==null) return PreparedStoredRaw(JsonObject(emptyMap()),"MISSING_PAYLOAD")
+            if(payload.isBlank()) return PreparedStoredRaw(JsonObject(emptyMap()),"EMPTY_PAYLOAD")
+            val element=runCatching { json.parseToJsonElement(payload) }.getOrElse {
+                return PreparedStoredRaw(JsonObject(emptyMap()),"MALFORMED_JSON")
+            }
+            val objectPayload=element as? JsonObject
+                ?:return PreparedStoredRaw(JsonObject(emptyMap()),"NON_OBJECT_PAYLOAD")
+            return PreparedStoredRaw(objectPayload,null)
+        }
         fun from(store: String, raw: JsonObject): StoredRecord {
             val timestamp = raw.text("timestamp", raw.text("updatedAt", "1970-01-01T00:00:00Z"))
             return StoredRecord(store, keyFor(store, raw), raw.text("kind", store), raw.text("source", if (store in rutStores) "rut" else "manual"), timestamp,
@@ -65,7 +85,7 @@ interface JamesDao {
     @Insert suspend fun importHistory(record: ImportHistory)
     @Query("SELECT * FROM import_history ORDER BY timestamp DESC") fun imports(): Flow<List<ImportHistory>>
 }
-@Database(entities = [StoredRecord::class, ArchiveRecord::class, ImportHistory::class], version = 5, exportSchema = true)
+@Database(entities = [StoredRecord::class, ArchiveRecord::class, ImportHistory::class], version = 6, exportSchema = true)
 abstract class JamesDatabase : RoomDatabase() {
  abstract fun records(): JamesDao
 }
@@ -97,4 +117,30 @@ val MIGRATION_3_4=object:androidx.room.migration.Migration(3,4){override fun mig
 
 val MIGRATION_4_5=object:androidx.room.migration.Migration(4,5){override fun migrate(db:androidx.sqlite.db.SupportSQLiteDatabase){
     db.execSQL("CREATE INDEX IF NOT EXISTS index_records_kind_timestamp ON records(kind,timestamp)")
+}}
+
+/**
+ * Early native installations could retain a nullable `rawJson` column despite
+ * Kotlin later assuming a non-null payload. Preserve every row while aligning
+ * Room's contract with that historical reality; [StoredRecord] quarantines a
+ * missing/malformed payload from semantic consumers without deleting it.
+ */
+val MIGRATION_5_6=object:androidx.room.migration.Migration(5,6){override fun migrate(db:androidx.sqlite.db.SupportSQLiteDatabase){
+    db.execSQL("CREATE TABLE records_v6 (store TEXT NOT NULL, recordId TEXT NOT NULL, kind TEXT NOT NULL, source TEXT NOT NULL, timestamp TEXT NOT NULL, localDate TEXT NOT NULL, updatedAt TEXT NOT NULL, externalId TEXT, rawJson TEXT, algorithmId TEXT, calibrationVersion TEXT, candidateStatus TEXT, jamesDayId TEXT, PRIMARY KEY(store,recordId))")
+    db.execSQL("INSERT INTO records_v6 (store,recordId,kind,source,timestamp,localDate,updatedAt,externalId,rawJson,algorithmId,calibrationVersion,candidateStatus,jamesDayId) SELECT store,recordId,kind,source,timestamp,localDate,updatedAt,externalId,rawJson,algorithmId,calibrationVersion,candidateStatus,jamesDayId FROM records")
+    db.execSQL("DROP TABLE records")
+    db.execSQL("ALTER TABLE records_v6 RENAME TO records")
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_records_kind ON records(kind)")
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_records_source ON records(source)")
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_records_localDate ON records(localDate)")
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_records_timestamp ON records(timestamp)")
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_records_source_externalId ON records(source,externalId)")
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_records_kind_timestamp ON records(kind,timestamp)")
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_records_source_kind_timestamp ON records(source,kind,timestamp)")
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_records_store_timestamp ON records(store,timestamp)")
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_records_algorithmId_timestamp ON records(algorithmId,timestamp)")
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_records_algorithmId_calibrationVersion_timestamp ON records(algorithmId,calibrationVersion,timestamp)")
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_records_candidateStatus_timestamp ON records(candidateStatus,timestamp)")
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_records_jamesDayId_algorithmId_timestamp ON records(jamesDayId,algorithmId,timestamp)")
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_records_jamesDayId_timestamp ON records(jamesDayId,timestamp)")
 }}

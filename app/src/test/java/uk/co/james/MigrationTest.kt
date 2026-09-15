@@ -46,6 +46,16 @@ class MigrationTest {
         val archive=StoredRecord.from("archives",fields("id" to p("original"),"payload" to backup(emptyList()),"timestamp" to p(stamp),"type" to p("original-import")))
         assertEquals(archive,BackupCodec.parse(BackupCodec.export(listOf(archive)).toString()).rows.single())
     }
+    @Test fun quarantinedLegacyPayloadIsRetainedAcrossBackupRoundTrip() {
+        val row=StoredRecord("personalRecords","legacy-null","HealthMetric","legacy",stamp,"2025-09-09",stamp,null,null)
+
+        val restored=BackupCodec.parse(BackupCodec.export(listOf(row)).toString()).rows.single()
+
+        assertEquals(row.store,restored.store)
+        assertEquals(row.recordId,restored.recordId)
+        assertEquals(row.kind,restored.kind)
+        assertEquals("MISSING_PAYLOAD",restored.rawPayloadIssue())
+    }
     @Test fun calibrationRecordsRemainPortableAndIndexed() {
         val raw=JamesCalibrationEngine.event("body_battery",65.0,"MUCH TOO HIGH",JamesAlgorithmRegistry.BODY_BATTERY_VERSION,"1.0.0","sleep:123",fields("prediction" to p(65)),timestamp=Instant.parse(stamp),recordId="event")
         val stored=StoredRecord.from("personalRecords",raw)

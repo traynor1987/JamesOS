@@ -16,6 +16,7 @@ import uk.co.james.database.MIGRATION_1_2
 import uk.co.james.database.MIGRATION_2_3
 import uk.co.james.database.MIGRATION_3_4
 import uk.co.james.database.MIGRATION_4_5
+import uk.co.james.database.MIGRATION_5_6
 
 @RunWith(AndroidJUnit4::class)
 class P1PersistenceInstrumentedTest {
@@ -35,7 +36,7 @@ class P1PersistenceInstrumentedTest {
             legacy.execSQL("INSERT INTO records VALUES ('metadata','kept','Metadata','james','2026-09-12T00:00:00Z','2026-09-12','2026-09-12T00:00:00Z',NULL,'{}')")
             legacy.version=1
         }
-        val migrated=Room.databaseBuilder(context,JamesDatabase::class.java,name).addMigrations(MIGRATION_1_2,MIGRATION_2_3,MIGRATION_3_4,MIGRATION_4_5).build()
+        val migrated=Room.databaseBuilder(context,JamesDatabase::class.java,name).addMigrations(MIGRATION_1_2,MIGRATION_2_3,MIGRATION_3_4,MIGRATION_4_5,MIGRATION_5_6).build()
         try {runBlocking {assertNotNull(migrated.records().get("metadata","kept"))}} finally {migrated.close()}
         context.deleteDatabase(name)
     }
@@ -54,5 +55,25 @@ class P1PersistenceInstrumentedTest {
             try {assertEquals(61,reopened.records().between(at.minusSeconds(60).toString(),at.toString()).size)} finally {reopened.close()}
             context.deleteDatabase(name)
         }
+    }
+
+    @Test fun versionFiveNullableLegacyPayloadSurvivesMigrationAndIsQuarantined() {
+        val context=ApplicationProvider.getApplicationContext<Context>()
+        val name="nullable-payload-${System.nanoTime()}.db"
+        val file=context.getDatabasePath(name).apply {parentFile?.mkdirs()}
+        android.database.sqlite.SQLiteDatabase.openOrCreateDatabase(file,null).use {legacy->
+            legacy.execSQL("CREATE TABLE records (store TEXT NOT NULL, recordId TEXT NOT NULL, kind TEXT NOT NULL, source TEXT NOT NULL, timestamp TEXT NOT NULL, localDate TEXT NOT NULL, updatedAt TEXT NOT NULL, externalId TEXT, rawJson TEXT, algorithmId TEXT, calibrationVersion TEXT, candidateStatus TEXT, jamesDayId TEXT, PRIMARY KEY(store,recordId))")
+            legacy.execSQL("CREATE TABLE archives (id TEXT NOT NULL PRIMARY KEY, path TEXT NOT NULL, digest TEXT NOT NULL, createdAt TEXT NOT NULL, purpose TEXT NOT NULL)")
+            legacy.execSQL("CREATE TABLE import_history (id TEXT NOT NULL PRIMARY KEY, source TEXT NOT NULL, timestamp TEXT NOT NULL, found INTEGER NOT NULL, added INTEGER NOT NULL, duplicates INTEGER NOT NULL, conflicts INTEGER NOT NULL, errors TEXT NOT NULL, originalArchiveId TEXT NOT NULL)")
+            legacy.execSQL("INSERT INTO records (store,recordId,kind,source,timestamp,localDate,updatedAt,rawJson) VALUES ('personalRecords','legacy-null','HealthMetric','legacy','2026-09-15T12:00:00Z','2026-09-15','2026-09-15T12:00:00Z',NULL)")
+            legacy.version=5
+        }
+        val migrated=Room.databaseBuilder(context,JamesDatabase::class.java,name).addMigrations(MIGRATION_5_6).build()
+        try {runBlocking {
+            val row=migrated.records().get("personalRecords","legacy-null")
+            assertNotNull(row)
+            assertEquals("MISSING_PAYLOAD",row!!.rawPayloadIssue())
+            assertTrue(row.raw().isEmpty())
+        }} finally {migrated.close();context.deleteDatabase(name)}
     }
 }
