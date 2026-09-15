@@ -21,6 +21,10 @@
 
 The source-first, documentation-only audit is in [JAMES_OS_PRODUCT_AUDIT.md](JAMES_OS_PRODUCT_AUDIT.md). It classifies current user journeys rather than relying on prior handover claims, and records the proposed 1.0 boundary, scope rejects and prioritised roadmap.
 
+### WHOOP field audit — 2026-09-15
+
+[JAMES_OS_WHOOP_FIELD_AUDIT.md](JAMES_OS_WHOOP_FIELD_AUDIT.md) is the source-traced Part 1 audit of current WHOOP scopes, raw retention, mapped fields, provenance, health-source overlap and supported public API fields. Current utilisation is strong for Recovery, sleep/Performance, overnight HRV/RHR and cycle Strain; sleep-need/quality detail and workout zones are preserved raw but not mapped. **Part 2 has not been implemented**: no WHOOP scope, sync, algorithm, Today, calibration or Wear-sampling behaviour changed.
+
 The audit's original highest-priority findings are now remediated and tracked with evidence in [JAMES_OS_PRODUCT_AUDIT_REMEDIATION.md](JAMES_OS_PRODUCT_AUDIT_REMEDIATION.md): Health Connect capability/permission parity; non-destructive Visit corrections; incremental legacy Visit reconstruction; Visit-linked semantic periods; and James-Day Timeline filtering. The audit remains a historical snapshot; the remediation matrix and the current code are authoritative for present status. Continue to treat data correctness, provenance, bounded processing and coherent day semantics as prerequisites before adding providers, continuous Wear sampling, AI, prediction or another dashboard.
 
 ## Today 2.0 / Compact Today
