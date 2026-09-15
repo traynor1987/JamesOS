@@ -2,6 +2,8 @@ package uk.co.james.location
 
 import java.time.Duration
 import java.time.Instant
+import uk.co.james.core.text
+import uk.co.james.core.validTime
 
 internal data class OwnershipInterval(val start:Instant,val end:Instant,val ownership:TimeOwnership,val interruption:Boolean=false)
 internal data class OwnershipSummary(val autonomousMinutes:Long,val committedMinutes:Long,val constrainedMinutes:Long,val workMinutes:Long,val unknownMinutes:Long,val interruptions:Int,val longestAutonomousBlockMinutes:Long)
@@ -21,8 +23,8 @@ internal fun ownershipSummary(intervals:List<OwnershipInterval>):OwnershipSummar
  * location remains evidence and is never rewritten. */
 internal fun ownershipIntervals(records:List<uk.co.james.database.StoredRecord>,from:Instant,to:Instant):List<OwnershipInterval> =
     records.asSequence().filter {it.kind=="PlaceVisit"}.mapNotNull {row->
-        val d=row.data();val start=d.text("start").takeIf(uk.co.james.core::validTime)?.let(Instant::parse)?:return@mapNotNull null
-        val end=d.text("end").takeIf(uk.co.james.core::validTime)?.let(Instant::parse)?:return@mapNotNull null
+        val d=row.data();val start=d.text("start").takeIf(::validTime)?.let(Instant::parse)?:return@mapNotNull null
+        val end=d.text("end").takeIf(::validTime)?.let(Instant::parse)?:return@mapNotNull null
         val owner=runCatching {TimeOwnership.valueOf(d.text("ownership","UNKNOWN"))}.getOrDefault(TimeOwnership.UNKNOWN)
         OwnershipInterval(maxOf(start,from),minOf(end,to),owner)
     }.filter {it.end>it.start}.toList()
