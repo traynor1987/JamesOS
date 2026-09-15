@@ -33,6 +33,11 @@ interface JamesDao {
     @Query("SELECT * FROM records WHERE kind=:kind AND timestamp BETWEEN :start AND :end ORDER BY timestamp") suspend fun kindBetween(kind:String,start:String,end:String):List<StoredRecord>
     @Query("SELECT * FROM records WHERE source=:source AND kind=:kind AND timestamp BETWEEN :start AND :end ORDER BY timestamp") suspend fun sourceKindBetween(source:String,kind:String,start:String,end:String):List<StoredRecord>
     @Query("SELECT * FROM records WHERE store=:store ORDER BY timestamp") suspend fun store(store:String):List<StoredRecord>
+    /** Place/context is deliberately scoped: live tracking never reads the historical records table. */
+    @Query("SELECT * FROM records WHERE store='personalRecords' AND kind='Place' ORDER BY updatedAt DESC LIMIT :limit") suspend fun places(limit:Int=100):List<StoredRecord>
+    @Query("SELECT * FROM records WHERE store='personalRecords' AND kind='LocationAnchor' AND recordId=:id LIMIT 1") suspend fun currentLocationAnchor(id:String):StoredRecord?
+    @Query("SELECT * FROM records WHERE (store='personalRecords' AND kind IN ('Place','LocationAnchor')) OR (store='personalRecords' AND kind='PlaceVisit' AND timestamp BETWEEN :start AND :end) ORDER BY timestamp DESC") fun observePlacesContext(start:String,end:String):Flow<List<StoredRecord>>
+    @Query("SELECT * FROM records WHERE store='personalRecords' AND kind='PlaceVisit' AND timestamp BETWEEN :start AND :end ORDER BY timestamp") suspend fun visitsBetween(start:String,end:String):List<StoredRecord>
     @Query("SELECT * FROM records WHERE kind='CalibrationEvent' AND algorithmId=:algorithmId AND timestamp BETWEEN :start AND :end ORDER BY timestamp DESC LIMIT :limit") suspend fun calibrationEvents(algorithmId:String,start:String,end:String,limit:Int=1000):List<StoredRecord>
     @Query("SELECT * FROM records WHERE kind='CalibrationCandidate' AND algorithmId=:algorithmId AND candidateStatus IN (:statuses) ORDER BY timestamp DESC LIMIT :limit") suspend fun calibrationCandidates(algorithmId:String,statuses:List<String>,limit:Int=100):List<StoredRecord>
     @Query("SELECT * FROM records WHERE algorithmId=:algorithmId AND kind IN (:kinds) ORDER BY timestamp DESC LIMIT :limit") suspend fun calibrationRows(algorithmId:String,kinds:List<String>,limit:Int=1000):List<StoredRecord>
@@ -53,7 +58,7 @@ interface JamesDao {
     @Insert suspend fun importHistory(record: ImportHistory)
     @Query("SELECT * FROM import_history ORDER BY timestamp DESC") fun imports(): Flow<List<ImportHistory>>
 }
-@Database(entities = [StoredRecord::class, ArchiveRecord::class, ImportHistory::class], version = 4, exportSchema = true)
+@Database(entities = [StoredRecord::class, ArchiveRecord::class, ImportHistory::class], version = 5, exportSchema = true)
 abstract class JamesDatabase : RoomDatabase() {
  abstract fun records(): JamesDao
 }
@@ -82,3 +87,7 @@ val MIGRATION_2_3=object:androidx.room.migration.Migration(2,3){
 
 
 val MIGRATION_3_4=object:androidx.room.migration.Migration(3,4){override fun migrate(db:androidx.sqlite.db.SupportSQLiteDatabase){db.execSQL("CREATE INDEX IF NOT EXISTS index_records_source_externalId ON records(source,externalId)");db.execSQL("CREATE INDEX IF NOT EXISTS index_records_jamesDayId_timestamp ON records(jamesDayId,timestamp)")}}
+
+val MIGRATION_4_5=object:androidx.room.migration.Migration(4,5){override fun migrate(db:androidx.sqlite.db.SupportSQLiteDatabase){
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_records_kind_timestamp ON records(kind,timestamp)")
+}}

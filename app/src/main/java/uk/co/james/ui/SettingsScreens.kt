@@ -17,6 +17,7 @@ import java.time.ZoneId
 import kotlin.math.roundToInt
 
 @Composable fun SettingsScreen(vm:JamesViewModel,export:(String?)->Unit,install:()->Unit) {
+    val theme by vm.theme.collectAsStateWithLifecycle()
     val compactToday by vm.compactToday.collectAsStateWithLifecycle()
     val health by vm.health.collectAsStateWithLifecycle()
     val whoopConfigured by vm.whoopConfigured.collectAsStateWithLifecycle()
@@ -219,20 +220,28 @@ import kotlin.math.roundToInt
     val visits=records.filter {it.kind=="PlaceVisit"}.sortedByDescending {it.timestamp}
     val savedPlaces=records.filter {it.kind=="Place"}
     val unknownVisits=visits.filter {visit->visit.data().text("title","Unknown place").let {it.isBlank()||it=="Unknown place"}}
+    val current=records.firstOrNull {it.kind=="LocationAnchor"}
     fun visitTime(minutes:Long)="${minutes/60}h ${minutes%60}m"
     AdaptiveCards(listOf(
         {PageTitle("Places","PRIVATE, LIGHTWEIGHT AND USEFUL")},
-        {JamesCard("Your day",if(allDay)"Tracking every 5 minutes"else "Off") {
+        {JamesCard("Tracking & diagnostics",if(allDay)"Low-power tracking active"else "Off") {
             Muted("James checks for a low-power location about every five minutes. A stop only appears after you have stayed there for at least five minutes—this is a places timeline, not a permanent route trace.")
             TextButton(onClick=requestLocation){Text("Allow location")}
             TextButton(onClick=settings){Text("Android settings: choose Allow all the time")}
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {Text(if(allDay)"Building today’s places"else "Build my places timeline",modifier=Modifier.padding(top=13.dp));Switch(allDay,onCheckedChange={value->vm.action {vm.app.location.setAllDay(value)}})}
             Button(onClick={vm.navigate("Location map")}){Text("Open map")}
             Muted("Tracking continues with the screen off while this is on. James stores completed visits rather than an endless location trail; timing and position are approximate.")
+            current?.let {anchor->val d=anchor.data();HorizontalDivider(Modifier.padding(vertical=8.dp));Text("Current place: ${d.text("placeName","Unknown place")}");Muted("Here ${visitTime(d.number("durationMin").toLong())} · ${d.text("movement","Stationary")} · accuracy ${d.number("accuracy").toInt()}m");Muted("Time ownership: ${d.text("ownership","UNKNOWN")} · ${d.text("ownershipSource","INFERRED")}")}
         }},
         {JamesCard("Recent places",if(visits.isEmpty())"No completed stops yet"else "${visits.size} recorded") {
             visits.take(14).forEach {visit->val data=visit.data();TextButton(onClick={vm.open("PlaceVisit",visit)},modifier=Modifier.fillMaxWidth(),contentPadding=PaddingValues(vertical=8.dp)) {Column(Modifier.fillMaxWidth()) {Text(if(data.text("title","Unknown place")=="Unknown place")"Where was this?" else data.text("title"));Muted("${visitTime(data.number("durationMin").toLong())} · ${data.text("category","Unclassified")} · ${data.text("activity","Unknown")}")}}}
             if(visits.isEmpty())Muted("A visit appears once James has seen you stay in the same area for at least five minutes. You can add what you did and a note afterwards.")
+        }},
+        {JamesCard("Time ownership","Only James confirms ownership") {
+            val intervals=uk.co.james.location.ownershipIntervals(visits,java.time.Instant.now().minus(java.time.Duration.ofDays(1)),java.time.Instant.now())
+            val summary=uk.co.james.location.ownershipSummary(intervals)
+            Text("Autonomous ${visitTime(summary.autonomousMinutes)} · Constrained ${visitTime(summary.constrainedMinutes)}")
+            Muted("Unknown ${visitTime(summary.unknownMinutes)} · ${summary.interruptions} interruption${if(summary.interruptions==1)"" else "s"} · longest autonomous block ${visitTime(summary.longestAutonomousBlockMinutes)}")
         }},
         {if(unknownVisits.isNotEmpty()) JamesCard("Where was this?","${unknownVisits.size} stop${if(unknownVisits.size==1)"" else "s"} need${if(unknownVisits.size==1)"s" else ""} a name") {
             Muted("Choose a saved place to label a completed stop. James will use that label automatically next time you are nearby.")
@@ -250,7 +259,7 @@ import kotlin.math.roundToInt
             Muted("Save places such as Home or Work. Future visits nearby can use that name and time category automatically.")
             Switch(enabled,onCheckedChange={value->vm.action {vm.app.location.setEnabled(value)}})
             OutlinedTextField(name,{name=it},label={Text("Current place name")},modifier=Modifier.fillMaxWidth())
-            Choice("Time category",category,listOf("Home","Work","Errands","Exercise","Relaxation","Unclassified")){category=it}
+            Choice("Place category",category,listOf("Home","Work","Family","Shopping","Gym","Food","Leisure","Health / appointment","Personal","Other")){category=it}
             Button(enabled=name.isNotBlank(),onClick={vm.action {vm.app.location.addCurrentPlace(name,category);name=""}}){Text("Save current place")}
             savedPlaces.forEach {Text("${it.data().text("title")} · ${it.data().text("category","Unclassified")}")}}
         },
