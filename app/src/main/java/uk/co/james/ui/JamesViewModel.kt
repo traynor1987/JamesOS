@@ -46,6 +46,10 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
      * scoring window remains bounded; Timeline never wakes up the whole history. */
     val screenRecords=combine(route,date) { screen, selected -> screen to selected }
         .flatMapLatest { (screen,selected) ->
+            if (screen in setOf("Location","Location map")) {
+                val end=java.time.LocalDate.parse(selected).plusDays(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant()
+                return@flatMapLatest repo.dao.observePlacesContext(end.minus(java.time.Duration.ofDays(if(screen=="Location map") 7 else 2)).toString(),end.toString())
+            }
             val selectedDay=runCatching { java.time.LocalDate.parse(selected) }.getOrElse { java.time.LocalDate.now() }
             val days=when(screen) { "Timeline" -> 1L; "Insights", "Weekly review" -> 8L; "Me" -> 90L; else -> 40L }
             val start=if(screen=="Timeline") selectedDay.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant() else selectedDay.minusDays(days-1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant()
@@ -136,6 +140,37 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
         val stamp=now()
         repo.save("personalRecords",personal("LifeFactActivity",fields("title" to p(activity),"activityType" to p(activity.uppercase().replace(" ","_")),"date" to p(today()),"algorithmVersion" to p(uk.co.james.state.JamesAlgorithmRegistry.LIFE_BALANCE_VERSION)),timestamp=stamp))
         message.value="Activity recorded."
+    }
+    /** A correction is separate user evidence; the GPS observation and inferred
+     * place remain intact.  Unknown is intentionally the default. */
+    fun setVisitOwnership(visit:StoredRecord,ownership:String)=action {
+        require(ownership in uk.co.james.location.TimeOwnership.entries.map {it.name})
+        val stamp=now()
+        val changed=visit.raw().changed("data" to visit.data().changed("ownership" to p(ownership),"ownershipSource" to p("JAMES_CORRECTION"),"ownershipCorrectedAt" to p(stamp)),"updatedAt" to p(stamp))
+        repo.save(visit.store,changed,visit.rawJson)
+        repo.save("personalRecords",personal("ContextCorrection",fields("visitId" to p(visit.recordId),"field" to p("ownership"),"value" to p(ownership),"source" to p("JAMES_CORRECTION")),source="manual",timestamp=stamp)
+        message.value="Time ownership updated."
+    }
+    fun addVisitInterruption(visitId:String,reason:String)=action {
+        require(reason in listOf("SOMEONE_NEEDED_ME","CHORE_ERRAND","WORK","PHONE_CALL","APPOINTMENT","TRAVEL","CHOSE_TO_STOP","TIRED","OTHER","UNKNOWN"))
+        val visit=repo.dao.get("personalRecords",visitId)?:return@action; val stamp=now(); val d=visit.data()
+        repo.save("personalRecords",personal("VisitInterruption",fields("visitId" to p(visit.recordId),"reason" to p(reason),"start" to p(stamp),"end" to JsonNull,"source" to p("JAMES_CORRECTION"),"jamesDayId" to p(d.text("jamesDayId"))),source="manual",timestamp=stamp)
+        message.value="Interruption recorded."
+    }
+    fun mergeVisitWithPrevious(visit:StoredRecord)=action {
+        val start=visit.data().text("start").takeIf(::validTime)?.let(java.time.Instant::parse)?:return@action
+        val previous=repo.dao.visitsBetween(start.minus(java.time.Duration.ofHours(12)).toString(),start.toString()).filter {it.recordId!=visit.recordId&&it.data().text("placeId")==visit.data().text("placeId")}.maxByOrNull {it.timestamp}?:return@action
+        val p=previous.data();val v=visit.data();val end=v.text("end").takeIf(::validTime)?:return@action
+        val merged=previous.raw().changed("data" to p.changed("end" to p(end),"durationMin" to p(java.time.Duration.between(java.time.Instant.parse(p.text("start")),java.time.Instant.parse(end)).toMinutes()),"mergedVisitIds" to p(visit.recordId),"correctionSource" to p("JAMES_CORRECTION")),"updatedAt" to p(now()))
+        repo.save(previous.store,merged,previous.rawJson);repo.save("personalRecords",personal("VisitCorrection",fields("visitId" to p(visit.recordId),"action" to p("MERGED_INTO"),"targetVisitId" to p(previous.recordId),"source" to p("JAMES_CORRECTION"))));repo.dao.delete(visit.store,visit.recordId);message.value="Visits merged."
+    }
+    fun splitVisit(visit:StoredRecord)=action {
+        val d=visit.data();val start=d.text("start").takeIf(::validTime)?.let(java.time.Instant::parse)?:return@action;val end=d.text("end").takeIf(::validTime)?.let(java.time.Instant::parse)?:return@action
+        if(java.time.Duration.between(start,end).toMinutes()<10)return@action
+        val mid=start.plusSeconds(java.time.Duration.between(start,end).seconds/2);val stamp=now()
+        val first=visit.raw().changed("data" to d.changed("end" to p(mid.toString()),"durationMin" to p(java.time.Duration.between(start,mid).toMinutes()),"correctionSource" to p("JAMES_CORRECTION")),"updatedAt" to p(stamp))
+        val second=personal("PlaceVisit",d.changed("start" to p(mid.toString()),"end" to p(end.toString()),"durationMin" to p(java.time.Duration.between(mid,end).toMinutes()),"splitFromVisitId" to p(visit.recordId),"correctionSource" to p("JAMES_CORRECTION")),source="manual",timestamp=mid.toString())
+        repo.save(visit.store,first,visit.rawJson);repo.save("personalRecords",second);message.value="Visit split at its midpoint; edit either time if needed."
     }
     fun logDifficultInteraction(type:String,person:String?=null)=action {
         val subtype=runCatching {uk.co.james.state.DifficultInteractionType.valueOf(type)}.getOrElse {error("Unknown interaction type.")}

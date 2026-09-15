@@ -76,7 +76,7 @@ private object VisitRecorder {
     suspend fun record(app:JamesApplication,point:Location) {
         if(!app.preferences.allDay.first()||point.accuracy>200f)return
         val at=Instant.ofEpochMilli(point.time).takeIf {it<=Instant.now().plusSeconds(60)}?:Instant.now()
-        val old=app.repository.dao.get("personalRecords",ANCHOR)
+        val old=app.repository.dao.currentLocationAnchor(ANCHOR)
         if(old==null){anchor(app,point,at);return}
         val d=old.data()
         val distance=FloatArray(1).also {Location.distanceBetween(d.number("latitude"),d.number("longitude"),point.latitude,point.longitude,it)}
@@ -92,23 +92,35 @@ private object VisitRecorder {
             )
             app.repository.save("personalRecords",personal("LocationAnchor",data,ANCHOR,"gps",d.text("start")))
         } else {
-            close(app,old,Instant.parse(d.text("lastSeen",d.text("start"))))
-            anchor(app,point,at)
+            // One outlying point is GPS noise, not a departure.  Keep the active
+            // visit open until the next stable evidence arrives or the exit grace
+            // period expires.
+            val last=Instant.parse(d.text("lastSeen",d.text("start")))
+            if (shouldCloseAnchor(last,at,false)) { close(app,old,last); anchor(app,point,at) }
         }
     }
     suspend fun finish(app:JamesApplication,at:Instant) {
-        app.repository.dao.get("personalRecords",ANCHOR)?.let {close(app,it,minOf(at,Instant.parse(it.data().text("lastSeen",it.data().text("start")))));app.repository.dao.delete("personalRecords",ANCHOR)}
+        app.repository.dao.currentLocationAnchor(ANCHOR)?.let {close(app,it,minOf(at,Instant.parse(it.data().text("lastSeen",it.data().text("start")))));app.repository.dao.delete("personalRecords",ANCHOR)}
     }
     private suspend fun anchor(app:JamesApplication,point:Location,at:Instant) {
+        val place=nearestPlace(app,point)
         app.repository.save("personalRecords",personal("LocationAnchor",fields(
             "start" to p(at.toString()),"lastSeen" to p(at.toString()),"latitude" to p(point.latitude),"longitude" to p(point.longitude),
-            "accuracy" to p(point.accuracy),"samples" to p(1),"durationMin" to p(0)
+            "accuracy" to p(point.accuracy),"samples" to p(1),"durationMin" to p(0),
+            "ownership" to p(inferredOwnership().name),"ownershipSource" to p("INFERRED"),"movement" to p("Stationary"),
+            "placeId" to p(place?.recordId?:""),"placeName" to p(place?.data()?.text("title")?:"Unknown place"),
+            "placeConfidence" to p(if(place==null)"LOW" else "MEDIUM")
         ),ANCHOR,"gps",at.toString()))
     }
+    private suspend fun nearestPlace(app:JamesApplication,point:Location):uk.co.james.database.StoredRecord? =
+        app.repository.dao.places().map { saved ->
+            val distance=FloatArray(1);Location.distanceBetween(point.latitude,point.longitude,saved.data().number("latitude"),saved.data().number("longitude"),distance)
+            saved to distance[0]
+        }.filter { (saved,distance)->distance<=saved.data().number("radius",150.0)+100 }.minByOrNull {it.second}?.first
     private suspend fun close(app:JamesApplication,anchor:uk.co.james.database.StoredRecord,end:Instant) {
         val d=anchor.data();val start=Instant.parse(d.text("start"));val minutes=visitMinutes(start,end)
         if(!completedVisit(minutes))return
-        val places=app.repository.dao.all().filter {it.kind=="Place"}
+        val places=app.repository.dao.places()
         val place=places.map {saved->
             val result=FloatArray(1);Location.distanceBetween(d.number("latitude"),d.number("longitude"),saved.data().number("latitude"),saved.data().number("longitude"),result)
             saved to result[0]
@@ -119,7 +131,9 @@ private object VisitRecorder {
         app.repository.save("personalRecords",personal("PlaceVisit",fields(
             "title" to p(title),"category" to p(category),"activity" to p("Unknown"),"start" to p(start.toString()),"end" to p(end.toString()),
             "durationMin" to p(minutes),"latitude" to p(d.number("latitude")),"longitude" to p(d.number("longitude")),
-            "approximate" to p(true),"note" to p(""),"placeId" to p(place?.recordId?:"")
+            "approximate" to p(true),"note" to p(""),"placeId" to p(place?.recordId?:""),
+            "ownership" to p(d.text("ownership",TimeOwnership.UNKNOWN.name)),"ownershipSource" to p(d.text("ownershipSource","INFERRED")),
+            "context" to p("UNKNOWN"),"contextSource" to p("INFERRED")
         ),id,"gps",start.toString()).changed("externalId" to p(id),"confidence" to p(65)))
     }
 }

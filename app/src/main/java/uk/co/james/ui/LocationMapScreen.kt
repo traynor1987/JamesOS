@@ -21,9 +21,9 @@ private data class VisitPin(val id:String,val title:String,val subtitle:String,v
 @Composable fun LocationMapScreen(vm:JamesViewModel,records:List<StoredRecord>) {
     val completedPins=remember(records) { records.filter {it.kind=="PlaceVisit"}.sortedByDescending {it.timestamp}.mapNotNull {visit->
         val data=visit.data();val lat=data.number("latitude");val lon=data.number("longitude")
-        if(lat==0.0&&lon==0.0)null else VisitPin(visit.recordId,data.text("title","Unnamed stop"),"${data.number("durationMin").toLong()/60}h ${data.number("durationMin").toLong()%60}m · ${data.text("activity","Not added")}",lat,lon)
+        if(lat==0.0&&lon==0.0)null else VisitPin(visit.recordId,data.text("title","Unnamed stop"),"${data.number("durationMin").toLong()/60}h ${data.number("durationMin").toLong()%60}m · ${data.text("ownership","UNKNOWN")}",lat,lon)
     }}
-    val currentPin=remember(records) {records.firstOrNull {it.kind=="LocationAnchor"}?.let {anchor->val data=anchor.data();val lat=data.number("latitude");val lon=data.number("longitude");if(lat==0.0&&lon==0.0)null else VisitPin(anchor.recordId,"Current area","Checking this area · ${data.number("durationMin").toLong()}m so far",lat,lon,true)}}
+    val currentPin=remember(records) {records.firstOrNull {it.kind=="LocationAnchor"}?.let {anchor->val data=anchor.data();val lat=data.number("latitude");val lon=data.number("longitude");if(lat==0.0&&lon==0.0)null else VisitPin(anchor.recordId,data.text("placeName","Current area"),"Here ${data.number("durationMin").toLong()}m · ${data.text("movement","Stationary")} · ownership ${data.text("ownership","UNKNOWN")}",lat,lon,true)}}
     val pins=listOfNotNull(currentPin)+completedPins
     Column(Modifier.fillMaxSize().padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
         PageTitle("Your places","OPENSTREETMAP · COMPLETED STOPS")

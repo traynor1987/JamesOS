@@ -5,6 +5,7 @@ import uk.co.james.database.JamesDatabase
 import uk.co.james.database.MIGRATION_1_2
 import uk.co.james.database.MIGRATION_2_3
 import uk.co.james.database.MIGRATION_3_4
+import uk.co.james.database.MIGRATION_4_5
 import uk.co.james.data.JamesRepository
 import uk.co.james.settings.Preferences
 import uk.co.james.health.HealthSource
@@ -13,7 +14,7 @@ import uk.co.james.nutrition.NutritionHealthSource
 import uk.co.james.sync.BackgroundJobs
 import uk.co.james.work.WorkContextProvider
 class JamesApplication : Application() {
-    val database by lazy { Room.databaseBuilder(this,JamesDatabase::class.java,"james-native.db").addMigrations(MIGRATION_1_2,MIGRATION_2_3,MIGRATION_3_4).build() }
+    val database by lazy { Room.databaseBuilder(this,JamesDatabase::class.java,"james-native.db").addMigrations(MIGRATION_1_2,MIGRATION_2_3,MIGRATION_3_4,MIGRATION_4_5).build() }
     val repository by lazy { JamesRepository(this,database) }
     val preferences by lazy { Preferences(this) }
     val health by lazy { HealthSource(this,repository) }
