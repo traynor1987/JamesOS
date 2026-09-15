@@ -206,3 +206,22 @@ Timeline, Compact/Classic Today, My Day and calibration snapshots receive factua
 - Migration from legacy builds is **export → uninstall → install → restore**. Wear legacy builds may need manual uninstall/reinstall.
 - Existing Import Centre backup is the migration format: `JamesAndroid` JSON schema 1 exports all persisted stores—settings, event templates, logged events, daily notes, milestones, metadata, personal records, and preserved imported archives. This includes James-only manual records, calibration/learned calibration records, context definitions/corrections, James Day metadata/history and local nutrition records when stored locally. WHOOP, Health Connect, Samsung and other provider-source measurements can be resynced after restoring.
 - Import validates every required store and row, uses additive merge (existing conflicts retained), preserves the original import, and writes a pre-import snapshot. Export the file to a user-chosen location such as **Downloads**; app-private daily snapshots are deleted by Android uninstall and are not the migration backup.
+
+## Mature-database performance guardrail (2026-09-15)
+
+The mature-import lag was a real whole-table reactive-state problem, not an Import Centre problem. The former root DAO `observe()` selected every `records` row and the root Compose tree collected and passed that complete history to every route. One write consequently re-emitted all history and caused repeated filtering, sorting, grouping and `StoredRecord.raw()/data()` JSON parsing in Today, Timeline, wellbeing, calibration, nutrition and context consumers.
+
+Implemented guardrails:
+
+- The UI no longer collects the whole-table DAO Flow. `JamesRepository.records` is a bounded 40-day scoring/state input flow; full `dao.all()` remains suspend-only for explicit backup/import transactions.
+- `JamesViewModel.screenRecords` is route/date scoped. Today uses its bounded 40-day semantic scoring window; Timeline observes only its selected calendar-day interval plus durable configuration; Insights uses eight days and Me uses 90 days. Hidden routes no longer receive ongoing full-history emissions.
+- `StoredRecord` now lazily prepares immutable `raw` and `data` JSON exactly once per emitted Room row. No global cache is used, so records cannot become stale across Room snapshots.
+- Existing targeted indexes (`timestamp`, `kind+timestamp`, `source+kind+timestamp`, `store+timestamp`, James Day and calibration indexes) support the scoped query patterns; no speculative index was added.
+- Existing persistence equality/fingerprint guards for Body Battery, Right Now and wellbeing remain required. Do not reintroduce timestamp-only derived writes or a broad reactive `SELECT *`.
+- Empty history now stays `Life Balance: LEARNING/UNKNOWN` without claiming **Hurting: Low personal time**. The warning requires recorded context evidence. It does not alter populated-data scoring.
+
+Regression coverage includes parse-once identity and empty-history Life Balance assertions. The public static gates (`public_repo_gate.py`, `audit_native.py`) passed locally. GitHub Actions run **#17** (`34947687540`) passed both the complete public unit/lint/phone-build validation and targeted emulator instrumentation on 2026-09-15. This Work environment has no Gradle binary, wrapper or Android SDK, so GitHub Actions remains the authoritative Android execution evidence.
+
+The prior regular validation failure was repository workflow setup, before tests: both jobs failed at the pinned `android-actions/setup-android` step. The successful signed release used the runner's existing `$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager`; public validation now uses that same explicit license/platform setup. Tests remain enabled and unchanged.
+
+The immediate priority remains proving this on a mature synthetic Room dataset/device and keeping all semantic windows explicit. Do not start Shift Tracker Part 2, maps, timers, settings redesign, Wear sampling, stress calibration UI, Time Ownership, new wellbeing features or unrelated polish before that validation is complete.

@@ -42,6 +42,16 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
     val route=saved.getStateFlow("route","Today")
     val tab=saved.getStateFlow("tab","Today")
     val date=saved.getStateFlow("date",today())
+    /** Only the visible route observes its semantic time window.  The 40 day
+     * scoring window remains bounded; Timeline never wakes up the whole history. */
+    val screenRecords=combine(route,date) { screen, selected -> screen to selected }
+        .flatMapLatest { (screen,selected) ->
+            val selectedDay=runCatching { java.time.LocalDate.parse(selected) }.getOrElse { java.time.LocalDate.now() }
+            val days=when(screen) { "Timeline" -> 1L; "Insights", "Weekly review" -> 8L; "Me" -> 90L; else -> 40L }
+            val start=if(screen=="Timeline") selectedDay.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant() else selectedDay.minusDays(days-1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant()
+            val end=if(screen=="Timeline") selectedDay.plusDays(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant() else java.time.Instant.now().plus(java.time.Duration.ofMinutes(5))
+            repo.dao.observeRouteWindow(start.toString(),end.toString())
+        }.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),emptyList())
     val dialog=saved.getStateFlow("dialog","")
     val draft=saved.getStateFlow("draft","{}")
     val message=MutableStateFlow("")

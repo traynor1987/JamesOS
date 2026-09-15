@@ -7,8 +7,12 @@ import kotlinx.serialization.json.JsonObject
 
 @Entity(tableName = "records", primaryKeys = ["store", "recordId"], indices = [Index("kind"), Index("source"), Index("localDate"), Index("timestamp"), Index(value = ["source", "externalId"]), Index(value=["kind","timestamp"]), Index(value=["source","kind","timestamp"]), Index(value=["store","timestamp"]), Index(value=["algorithmId","timestamp"]), Index(value=["algorithmId","calibrationVersion","timestamp"]), Index(value=["candidateStatus","timestamp"]), Index(value=["jamesDayId","algorithmId","timestamp"]), Index(value=["jamesDayId","timestamp"])])
 data class StoredRecord(val store: String, val recordId: String, val kind: String, val source: String, val timestamp: String, val localDate: String, val updatedAt: String, val externalId: String?, val rawJson: String, val algorithmId:String?=null, val calibrationVersion:String?=null, val candidateStatus:String?=null, val jamesDayId:String?=null) {
-    fun raw(): JsonObject = json.parseToJsonElement(rawJson) as JsonObject
-    fun data(): JsonObject = raw().obj("data")
+    /** Room rows are immutable. Parsing once per emitted row removes the former
+     * parse-on-every-filter/map/sort behaviour without a cross-snapshot cache. */
+    @delegate:Ignore private val parsedRaw by lazy(LazyThreadSafetyMode.NONE) { json.parseToJsonElement(rawJson) as JsonObject }
+    @delegate:Ignore private val parsedData by lazy(LazyThreadSafetyMode.NONE) { parsedRaw.obj("data") }
+    fun raw(): JsonObject = parsedRaw
+    fun data(): JsonObject = parsedData
     companion object {
         fun from(store: String, raw: JsonObject): StoredRecord {
             val timestamp = raw.text("timestamp", raw.text("updatedAt", "1970-01-01T00:00:00Z"))
@@ -23,8 +27,8 @@ data class ArchiveRecord(@PrimaryKey val id: String, val path: String, val diges
 data class ImportHistory(@PrimaryKey val id: String, val source: String, val timestamp: String, val found: Int, val added: Int, val duplicates: Int, val conflicts: Int, val errors: String, val originalArchiveId: String)
 @Dao
 interface JamesDao {
+    /** Legacy full snapshot only for explicit backup/import work. Never collect in UI state. */
     @Query("SELECT * FROM records ORDER BY store, recordId") suspend fun all(): List<StoredRecord>
-    @Query("SELECT * FROM records ORDER BY store, recordId") fun observe(): Flow<List<StoredRecord>>
     @Query("SELECT * FROM records WHERE timestamp BETWEEN :start AND :end ORDER BY timestamp") suspend fun between(start:String,end:String):List<StoredRecord>
     @Query("SELECT * FROM records WHERE kind=:kind AND timestamp BETWEEN :start AND :end ORDER BY timestamp") suspend fun kindBetween(kind:String,start:String,end:String):List<StoredRecord>
     @Query("SELECT * FROM records WHERE source=:source AND kind=:kind AND timestamp BETWEEN :start AND :end ORDER BY timestamp") suspend fun sourceKindBetween(source:String,kind:String,start:String,end:String):List<StoredRecord>
@@ -37,6 +41,7 @@ interface JamesDao {
     // than the history window would silently stop affecting production.
     @Query("SELECT * FROM records WHERE timestamp>=:since OR store IN ('metadata','settings','loggedEvents','eventTemplates') OR kind IN ('Routine','CalibrationProfile') ORDER BY store,recordId") suspend fun stateInputs(since:String):List<StoredRecord>
     @Query("SELECT * FROM records WHERE timestamp>=:since OR store IN ('metadata','settings','loggedEvents','eventTemplates') OR kind IN ('Routine','CalibrationProfile') ORDER BY store,recordId") fun observeStateInputs(since:String):Flow<List<StoredRecord>>
+    @Query("SELECT * FROM records WHERE (timestamp BETWEEN :start AND :end) OR store IN ('metadata','settings','eventTemplates') OR kind IN ('Routine','CalibrationProfile') ORDER BY timestamp, store, recordId") fun observeRouteWindow(start:String,end:String):Flow<List<StoredRecord>>
     @Query("SELECT * FROM records WHERE store = :store AND recordId = :id") suspend fun get(store: String, id: String): StoredRecord?
     @Query("SELECT * FROM records WHERE store=:store AND recordId IN (:ids)") suspend fun getByIds(store:String,ids:List<String>):List<StoredRecord>
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun put(record: StoredRecord)

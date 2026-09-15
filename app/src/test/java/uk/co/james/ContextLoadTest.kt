@@ -19,6 +19,12 @@ class ContextLoadTest {
         assertEquals(0,current.score)
         assertNull(current.active)
     }
+    @Test fun emptyHistoryDoesNotClaimLowPersonalTime() {
+        val balance=lifeBalance(emptyList(),now)
+        assertEquals("LEARNING",balance.trend)
+        assertFalse(balance.hurting.contains("Low personal time"))
+        assertEquals("UNKNOWN",balance.autonomy)
+    }
     @Test fun calmObligationIsLimited() {
         val row=context("visit","OBLIGATION",now.minus(Duration.ofHours(3)))
         val current=currentContext(listOf(row),now)

@@ -41,7 +41,9 @@ internal fun sameBodyBatteryStrainOwner(oldData:JsonObject?,newData:JsonObject):
 
 class JamesRepository(val context: Context, val db: JamesDatabase) {
     val dao=db.records()
-    val records=dao.observe()
+    /** Global reactive state is deliberately bounded. Full history is accessed only
+     * by explicit backup/import queries and route-specific windows. */
+    val records=dao.observeStateInputs(Instant.now().minus(Duration.ofDays(40)).toString())
     val imports=dao.imports()
     private val archiveDir=File(context.filesDir,"archives").apply { mkdirs() }
     private val activeStaged=ConcurrentHashMap.newKeySet<String>()
