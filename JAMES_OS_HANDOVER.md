@@ -254,6 +254,7 @@ The immediate priority remains proving this on a mature synthetic Room dataset/d
 - Timeline now emits concise linked `OwnershipPeriod` and `VisitInterruption` moments (for example, “Time ownership: Autonomous” and “Interrupted · Phone call”) rather than hiding the semantic period behind unrelated context rows. Visit detail edits preserve `ContextCorrection` provenance for changed place, context, activity and ownership fields; they do not rewrite the original GPS evidence.
 - Places diagnostics now use the same scoped ownership ledger as Today/Life Balance, including current explicit ownership and bounded James-Day interruption/longest-block information. The location route observes only places, current anchor and the current bounded context/ownership/activity kinds; it must not be changed back to a full historical records observer.
 - Legacy context labels are displayed as **legacy context** rather than being silently presented as ownership. New situation labels include Home, Work and Resting. This is compatibility presentation, not a destructive migration of historical records.
+- GitHub Actions run **#33** (`34980179077`) validated the restored complete `main` tree at commit `a41c9d1634d2dadab13c3f078a72acf1a2e939be`: public unit tests, lint and phone compilation and targeted emulator instrumentation all passed on 2026-09-15. The source tree on that commit is the complete local implementation through `e716bd5`; do not reintroduce a partial-tree transport commit when updating GitHub.
 
 
 ## Settings organisation (2026-09-15)
