@@ -143,6 +143,7 @@ private object VisitRecorder {
             "title" to p(title),"category" to p(category),"activity" to p("Unknown"),"start" to p(start.toString()),"end" to p(end.toString()),
             "durationMin" to p(minutes),"latitude" to p(d.number("latitude")),"longitude" to p(d.number("longitude")),
             "approximate" to p(true),"note" to p(""),"placeId" to p(place?.recordId?:""),
+            "anchorId" to p(anchor.recordId),
             "ownership" to p(d.text("ownership",TimeOwnership.UNKNOWN.name)),"ownershipSource" to p(d.text("ownershipSource","INFERRED")),
             "context" to p("UNKNOWN"),"contextSource" to p("INFERRED")
         ),id,"gps",start.toString()).changed("externalId" to p(id),"confidence" to p(65)))

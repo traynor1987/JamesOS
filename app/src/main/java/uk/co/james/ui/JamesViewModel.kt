@@ -104,10 +104,12 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
         val visit=runCatching {uk.co.james.state.VisitType.valueOf(type)}.getOrElse {error("Unknown context type.")}
         val stamp=now()
         val day=uk.co.james.time.jamesDayWindow(records.value,java.time.Instant.parse(stamp))
+        val anchor=records.value.firstOrNull {it.kind=="LocationAnchor"}
         val raw=personal("ContextPeriod",fields(
             "title" to p("Context: "+visit.name.lowercase().replaceFirstChar {it.uppercase()}),
             "visitType" to p(visit.name),"start" to p(stamp),"end" to p(""),
             "placeId" to (placeId?.let(::p)?:JsonNull),"placeName" to (placeName?.let(::p)?:JsonNull),
+            "visitId" to p(""),"anchorId" to p(anchor?.recordId?:""),
             "contextSource" to p("manual"),"jamesDayId" to p(day.id),
             "algorithmVersion" to p(uk.co.james.state.JamesAlgorithmRegistry.CONTEXT_LOAD_VERSION),
             "calibrationVersion" to p("1.0.0")
@@ -150,7 +152,7 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
         repo.save("personalRecords",personal("LifeFactActivity",fields(
             "title" to p(activity),"activityType" to p(activity.uppercase().replace(" ","_")),
             "start" to p(stamp),"end" to p(""),"date" to p(today()),
-            "anchorId" to p(anchor?.recordId?:""),"contextId" to p(context?.id?:""),
+            "visitId" to p(""),"anchorId" to p(anchor?.recordId?:""),"contextId" to p(context?.id?:""),
             "jamesDayId" to p(day.id),"activitySource" to p("JAMES_CONFIRMED"),
             "algorithmVersion" to p(uk.co.james.state.JamesAlgorithmRegistry.LIFE_BALANCE_VERSION)
         ),timestamp=stamp))
@@ -186,7 +188,7 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
         repo.save(open.store,open.raw().changed("data" to open.data().changed("end" to p(stamp)),"updatedAt" to p(stamp)),open.rawJson)
         val interruption=personal("VisitInterruption",fields("visitId" to p(""),"anchorId" to p(anchor?.recordId?:""),"interruptedOwnershipPeriodId" to p(open.recordId),"reason" to p(reason),"start" to p(stamp),"end" to p(""),"source" to p("JAMES_CORRECTION"),"provenance" to p("James confirmed interruption.")),source="manual",timestamp=stamp)
         repo.save("personalRecords",interruption)
-        repo.save("personalRecords",personal("OwnershipPeriod",fields("start" to p(stamp),"end" to p(""),"ownership" to p("COMMITTED"),"ownershipSource" to p("JAMES_CONFIRMED"),"interruptionId" to p(interruption.text("id")),"anchorId" to p(anchor?.recordId?:""),"provenance" to p("Interruption is active.")),source="manual",timestamp=stamp))
+        repo.save("personalRecords",personal("OwnershipPeriod",fields("start" to p(stamp),"end" to p(""),"ownership" to p("COMMITTED"),"ownershipSource" to p("JAMES_CONFIRMED"),"interruptionId" to p(interruption.text("id")),"visitId" to p(""),"anchorId" to p(anchor?.recordId?:""),"provenance" to p("Interruption is active.")),source="manual",timestamp=stamp))
         message.value="Interruption recorded."
     }
     fun resumeCurrentTime()=action {
@@ -194,7 +196,7 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
         val stamp=now(); val anchor=records.value.firstOrNull {it.kind=="LocationAnchor"}
         repo.save(interruption.store,interruption.raw().changed("data" to interruption.data().changed("end" to p(stamp)),"updatedAt" to p(stamp)),interruption.rawJson)
         records.value.filter {it.kind=="OwnershipPeriod"&&it.data().text("end").isBlank()}.forEach {open->repo.save(open.store,open.raw().changed("data" to open.data().changed("end" to p(stamp)),"updatedAt" to p(stamp)),open.rawJson)}
-        repo.save("personalRecords",personal("OwnershipPeriod",fields("start" to p(stamp),"end" to p(""),"ownership" to p("AUTONOMOUS"),"ownershipSource" to p("JAMES_CONFIRMED"),"resumesInterruptionId" to p(interruption.recordId),"anchorId" to p(anchor?.recordId?:""),"provenance" to p("James resumed personal time.")),source="manual",timestamp=stamp))
+        repo.save("personalRecords",personal("OwnershipPeriod",fields("start" to p(stamp),"end" to p(""),"ownership" to p("AUTONOMOUS"),"ownershipSource" to p("JAMES_CONFIRMED"),"resumesInterruptionId" to p(interruption.recordId),"visitId" to p(""),"anchorId" to p(anchor?.recordId?:""),"provenance" to p("James resumed personal time.")),source="manual",timestamp=stamp))
         message.value="Personal time resumed."
     }
     fun addVisitInterruption(visitId:String,reason:String)=action {
@@ -225,6 +227,37 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
         val first=visit.raw().changed("data" to d.changed("end" to p(mid.toString()),"durationMin" to p(java.time.Duration.between(start,mid).toMinutes()),"correctionSource" to p("JAMES_CORRECTION")),"updatedAt" to p(stamp))
         val second=personal("PlaceVisit",d.changed("start" to p(mid.toString()),"end" to p(end.toString()),"durationMin" to p(java.time.Duration.between(mid,end).toMinutes()),"splitFromVisitId" to p(visit.recordId),"correctionSource" to p("JAMES_CORRECTION")),source="manual",timestamp=mid.toString())
         repo.save(visit.store,first,visit.rawJson);repo.save("personalRecords",second);repo.save("personalRecords",personal("VisitCorrection",fields("visitId" to p(visit.recordId),"action" to p("SPLIT"),"targetVisitId" to p(second.text("id")),"source" to p("JAMES_CORRECTION"),"rawEvidenceId" to p(evidenceId),"reversible" to p(true)),source="manual",timestamp=stamp));message.value="Visit split at its midpoint; original evidence retained."
+    }
+    /** Reversal restores the snapshots rather than deleting any observed or
+     * derived row. The correction stays as an auditable, explicitly reverted
+     * decision, so a later import or review can still explain the history. */
+    fun revertLatestVisitCorrection(visit:StoredRecord)=action {
+        val correction=records.value.filter { row->
+            row.kind=="VisitCorrection" && row.data().text("revertedAt").isBlank() &&
+                (row.data().text("visitId")==visit.recordId||row.data().text("targetVisitId")==visit.recordId)
+        }.maxByOrNull {it.timestamp}?:run {message.value="No reversible visit correction found.";return@action}
+        val data=correction.data(); val stamp=now()
+        suspend fun restore(snapshotId:String) {
+            val snapshot=repo.dao.get("personalRecords",snapshotId)?:return
+            val original=snapshot.data().obj("rawVisit")
+            if(original.isEmpty())return
+            val current=repo.dao.get("personalRecords",original.text("id"))
+            repo.save("personalRecords",original,current?.rawJson)
+        }
+        when(data.text("action")) {
+            "MERGED_INTO" -> {
+                restore(data.text("previousRawEvidenceId"))
+                restore(data.text("targetRawEvidenceId"))
+            }
+            "SPLIT" -> {
+                restore(data.text("rawEvidenceId"))
+                val created=repo.dao.get("personalRecords",data.text("targetVisitId"))
+                if(created!=null) repo.save(created.store,created.raw().changed("data" to created.data().changed("supersededByVisitId" to p(data.text("visitId")),"supersededAt" to p(stamp),"correctionSource" to p("REVERSAL")),"updatedAt" to p(stamp)),created.rawJson)
+            }
+            else -> {message.value="That correction cannot be reversed automatically.";return@action}
+        }
+        repo.save(correction.store,correction.raw().changed("data" to data.changed("revertedAt" to p(stamp),"revertedBy" to p("JAMES_CORRECTION")),"updatedAt" to p(stamp)),correction.rawJson)
+        message.value="Visit correction reverted; all evidence remains preserved."
     }
     fun logDifficultInteraction(type:String,person:String?=null)=action {
         val subtype=runCatching {uk.co.james.state.DifficultInteractionType.valueOf(type)}.getOrElse {error("Unknown interaction type.")}
@@ -379,9 +412,9 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
             val context=uk.co.james.state.currentContext(records.value).active
             val day=uk.co.james.time.jamesDayWindow(records.value,java.time.Instant.parse(stamp))
             val extras=if(dialog.value=="LifeFactActivity") fields(
-                "anchorId" to p(anchor?.recordId?:""),"contextId" to p(context?.id?:""),
+                "visitId" to p(""),"anchorId" to p(anchor?.recordId?:""),"contextId" to p(context?.id?:""),
                 "jamesDayId" to p(day.id),"activitySource" to p("JAMES_CONFIRMED")
-            ) else fields("anchorId" to p(anchor?.recordId?:""),"jamesDayId" to p(day.id),"contextSource" to p("JAMES_CONFIRMED"))
+            ) else fields("visitId" to p(""),"anchorId" to p(anchor?.recordId?:""),"jamesDayId" to p(day.id),"contextSource" to p("JAMES_CONFIRMED"))
             raw=raw.changed("data" to raw.obj("data").changed(*extras.entries.map {it.key to it.value}.toTypedArray()))
         }
         val store=saved.get<String>("editor-store")?:"personalRecords"
