@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.filter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun JamesRoot(vm: JamesViewModel,chooseImport:()->Unit,export:(String?)->Unit,requestHealth:(Set<String>)->Unit,requestLocation:()->Unit,requestActivity:()->Unit,openAppSettings:()->Unit,install:()->Unit) {
-    val route by vm.route.collectAsStateWithLifecycle();val tab by vm.tab.collectAsStateWithLifecycle();val data by vm.records.collectAsStateWithLifecycle();val busy by vm.busy.collectAsStateWithLifecycle();val dialog by vm.dialog.collectAsStateWithLifecycle()
+    val route by vm.route.collectAsStateWithLifecycle();val tab by vm.tab.collectAsStateWithLifecycle();val data by vm.screenRecords.collectAsStateWithLifecycle();val busy by vm.busy.collectAsStateWithLifecycle();val dialog by vm.dialog.collectAsStateWithLifecycle()
     val snack=remember {SnackbarHostState()}
     LaunchedEffect(vm){vm.message.filter {it.isNotBlank()}.collect {text->snack.showSnackbar(text);vm.message.value=""}}
     BackHandler(route!=tab || dialog.isNotEmpty()) {if(dialog.isNotEmpty())vm.close()else vm.navigate(tab)}
