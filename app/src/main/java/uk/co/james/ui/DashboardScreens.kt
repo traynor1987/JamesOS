@@ -34,8 +34,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
 
-@Composable fun TodayScreen(vm:JamesViewModel,records:List<StoredRecord>) {
+@Composable fun TodayScreen(vm:JamesViewModel,records:List<StoredRecord>,recordsLoaded:Boolean,history:HistoryReadiness) {
     LaunchedEffect(Unit) {while(isActive){vm.healthSyncQuietly();vm.whoopSyncQuietly();delay(5*60*1000L)}}
+    // Room's initial emission is asynchronous.  An empty list before that
+    // emission means "loading", not "James has no history".
+    if(!recordsLoaded||!history.loaded) {
+        AdaptiveCards(listOf({PageTitle("Good morning, James.",LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE d MMMM")))},{JamesCard("Restoring James OS","Loading your existing state") {LinearProgressIndicator(modifier=Modifier.fillMaxWidth());Muted("Your history and current evidence are being restored.")}}),listOf("title","restoring"))
+        return
+    }
     val clock=foregroundMinute()
     val wellbeing by vm.wellbeing.collectAsStateWithLifecycle()
     val wellbeingSettings by vm.wellbeingSettings.collectAsStateWithLifecycle()
@@ -64,7 +70,7 @@ import kotlin.math.abs
             val context=currentContext(records,clock)
             val balance=lifeBalance(records,clock)
             val health=prepareWhoopOverview(records,clock)
-            val compact=prepareCompactToday(records,clock,day,nutrition,right,wellbeing,health,context,balance,wearSignals,energyTimeSettings)
+            val compact=prepareCompactToday(records,clock,day,nutrition,right,wellbeing,health,context,balance,wearSignals,energyTimeSettings,history.hasUserHistory)
             TodayPrepared(personal,routines,routines.count {Habits.complete(personal,it.recordId,today())},day,
                 moments,nutrition,right,context,balance,health,wearSignals,wellbeing,compact)
         }
@@ -84,7 +90,7 @@ import kotlin.math.abs
     val cardKeys=mutableListOf<String>()
     fun card(key:String,content:@Composable ()->Unit){cardKeys+=key;cards+=content}
     card("title") {PageTitle("Good ${if(LocalTime.now().hour<12)"morning"else if(LocalTime.now().hour<18)"afternoon"else "evening"}, James.",LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE d MMMM")))}
-    if(records.none {it.store=="loggedEvents"})card("history-import") {JamesCard("Your history belongs here") {Muted("Import your RUT or James backup to continue your existing journey.");Button(onClick={vm.navigate("Import Centre")}){Text("Import existing RUT data")}}}
+    if(!history.hasUserHistory)card("history-import") {JamesCard("Your history belongs here") {Muted("Import your RUT or James backup to continue your existing journey.");Button(onClick={vm.navigate("Import Centre")}){Text("Import existing RUT data")}}}
     card("health-monitor") {WhoopOverview(
         snapshot=ready.healthOverview,openConnections={vm.navigate("Connections")},
         wellbeing=wellbeing.takeIf {wellbeingSettings.enabled},
@@ -377,6 +383,7 @@ private fun stressLevel(score:Double)=when {score<20->"Very low";score<40->"Low"
     var mood by rememberSaveable {mutableStateOf("OKAY")}
     var energy by rememberSaveable {mutableStateOf("OKAY")}
     var anxiety by rememberSaveable {mutableStateOf("NONE")}
+    var showDiagnosticInputs by rememberSaveable {mutableStateOf(false)}
     JamesCard("Mental wellbeing","Experimental personal trends · not a diagnosis") {
         Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(18.dp)) {
             WellbeingRing(summary.reserve.score,wellbeingReserveColour(summary.reserve.score))
@@ -400,7 +407,15 @@ private fun stressLevel(score:Double)=when {score<20->"Very low";score<40->"Low"
             Muted("Trigger: ${diagnostic.trigger}")
             Muted("Newest input: ${diagnostic.newestInputAt?:"Unavailable"} · Next eligible: ${diagnostic.nextEligibleAt}")
             Muted("Previous: ${diagnostic.previousScore?.toString()?:"—"} · Current: ${diagnostic.currentScore}${if(diagnostic.unchanged)" · unchanged" else ""}")
-            Muted("Inputs used: ${diagnostic.inputTimestamps.joinToString {it.source+" "+it.timestamp.take(16)}}")
+            val latest=diagnostic.inputTimestamps.maxByOrNull {it.timestamp}
+            Muted("Inputs used: ${diagnostic.inputTimestamps.size} · latest ${latest?.let {it.source+" "+it.timestamp.take(16)}?:"Unavailable"}")
+            if(diagnostic.inputTimestamps.isNotEmpty()) {
+                TextButton(onClick={showDiagnosticInputs=!showDiagnosticInputs}) {Text(if(showDiagnosticInputs)"HIDE RECENT INPUTS" else "SHOW RECENT INPUTS")}
+                if(showDiagnosticInputs) {
+                    boundedDiagnosticInputs(diagnostic.inputTimestamps).forEach {input->Muted("${input.source} · ${input.timestamp.take(16)}")}
+                    if(diagnostic.inputTimestamps.size>12)Muted("Showing the newest 12 inputs.")
+                }
+            }
         }
         Text("WHY JAMES THINKS THIS",style=MaterialTheme.typography.labelLarge,fontWeight=FontWeight.Bold)
         WellbeingContributionBreakdown("MENTAL RESERVE",summary.reserve.contributors)

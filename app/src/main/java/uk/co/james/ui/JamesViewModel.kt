@@ -23,6 +23,15 @@ import uk.co.james.calibration.*
 import java.io.File
 
 data class PlaceCalibrationUiState(val title:String,val detail:String,val inProgress:Boolean)
+data class RouteRecordsState(val records:List<StoredRecord>,val loaded:Boolean)
+data class HistoryReadiness(val loaded:Boolean,val hasUserHistory:Boolean)
+
+/** Route changes must expose an explicit loading boundary instead of allowing
+ * a destination to reuse the previous destination's bounded Room snapshot. */
+internal fun routeRecords(query:Flow<List<StoredRecord>>):Flow<RouteRecordsState> = flow {
+    emit(RouteRecordsState(emptyList(),false))
+    emitAll(query.map {RouteRecordsState(it,true)})
+}
 
 class JamesViewModel(application: Application,private val saved: SavedStateHandle): AndroidViewModel(application) {
     private var lastQuietHealthSync=0L
@@ -32,7 +41,10 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
     val records=repo.records.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),emptyList())
     val wellbeingSettings=app.preferences.wellbeing.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),uk.co.james.settings.WellbeingSettings())
     val energyTimeSettings=app.preferences.energyTime.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),uk.co.james.settings.EnergyTimeSettings())
-    private val stateRecords=repo.dao.observeStateInputs(java.time.Instant.now().minus(java.time.Duration.ofDays(40)).toString()).stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),emptyList())
+    private val stateRecords=repo.dao.observeStateInputs(java.time.Instant.now().minus(java.time.Duration.ofDays(40)).toString())
+        .stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),emptyList())
+    val historyReadiness=repo.dao.observeHasUserHistory().map {HistoryReadiness(true,it)}
+        .stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),HistoryReadiness(false,false))
     val wellbeing=combine(stateRecords,wellbeingSettings) { rows, settings->uk.co.james.state.mentalWellbeing(rows,settings) }.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),MentalWellbeingSummary(today(),uk.co.james.state.WellbeingOutput(0,"VERY LOW","LEARNING", "LEARNING",emptyList()),uk.co.james.state.WellbeingOutput(0,"VERY LOW","LEARNING","LEARNING",emptyList()),uk.co.james.state.WellbeingOutput(50,"OKAY","LEARNING","LEARNING",emptyList()),0,0,0,0,0))
     val imports=repo.imports.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),emptyList())
     val theme=app.preferences.theme.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),"system")
@@ -53,7 +65,7 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
             if (screen in setOf("Location","Location map")) {
                 val end=java.time.LocalDate.parse(selected).plusDays(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant()
                 val days=if(screen=="Location map") mapRange.toLong() else 14L
-                return@flatMapLatest repo.dao.observePlacesContext(end.minus(java.time.Duration.ofDays(days)).toString(),end.toString())
+                return@flatMapLatest routeRecords(repo.dao.observePlacesContext(end.minus(java.time.Duration.ofDays(days)).toString(),end.toString()))
             }
             val selectedDay=runCatching { java.time.LocalDate.parse(selected) }.getOrElse { java.time.LocalDate.now() }
             val days=when(screen) { "Timeline" -> 3L; "Insights", "Weekly review" -> 8L; "Me" -> 90L; else -> 40L }
@@ -61,8 +73,8 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
             // date in order to resolve the actual James Day, not a whole history.
             val start=if(screen=="Timeline") selectedDay.minusDays(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant() else selectedDay.minusDays(days-1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant()
             val end=if(screen=="Timeline") selectedDay.plusDays(2).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant() else java.time.Instant.now().plus(java.time.Duration.ofMinutes(5))
-            repo.dao.observeRouteWindow(start.toString(),end.toString())
-        }.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),emptyList())
+            routeRecords(repo.dao.observeRouteWindow(start.toString(),end.toString()))
+        }.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),RouteRecordsState(emptyList(),false))
     val dialog=saved.getStateFlow("dialog","")
     val draft=saved.getStateFlow("draft","{}")
     val message=MutableStateFlow("")
@@ -85,7 +97,7 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
     val githubAccess=MutableStateFlow(updateCredentials.configured())
     fun saveGithubAccess(token:String)=action {withContext(Dispatchers.IO){updateCredentials.save(token)};githubAccess.value=true;message.value="GitHub access saved on this device."}
     fun removeGithubAccess()=action {withContext(Dispatchers.IO){updateCredentials.clear()};githubAccess.value=false;update.value=null;downloaded.value=null;message.value="GitHub access removed."}
-    init {saved.get<String>("staged-import")?.let {path->action {preview(path)}};refreshPermissions();viewModelScope.launch {stateRecords.filter {it.isNotEmpty()}.debounce(5000).collectLatest {runCatching {app.wear.publish(it)}}};viewModelScope.launch {combine(stateRecords,wellbeingSettings) { rows, settings->rows to settings }.filter {it.first.isNotEmpty()&&it.second.enabled}.debounce(8000).collectLatest {(rows,settings)->runCatching {repo.persistWellbeing(uk.co.james.state.mentalWellbeing(rows,settings))}}};viewModelScope.launch {stateRecords.filter {it.isNotEmpty()}.debounce(6000).collectLatest {rows->runCatching {repo.persistBodyBattery(bodyBattery(rows,trigger="records_refresh"))}}};viewModelScope.launch {combine(stateRecords,energyTimeSettings){rows,settings->rows to settings}.filter {it.first.isNotEmpty()}.debounce(9000).collectLatest {(rows,settings)->runCatching {repo.persistRightNow(rightNowSummary(rows,settings))}}};viewModelScope.launch {runCatching {app.wear.refreshConnection()}};viewModelScope.launch(Dispatchers.IO) {runCatching {repo.recoverInterruptedCalibrationAnalysis();repo.ensureCalibrationProfiles();repo.bootstrapCalibrationEvidence()}}}
+    init {saved.get<String>("staged-import")?.let {path->action {preview(path)}};refreshPermissions();viewModelScope.launch {stateRecords.filter {it.isNotEmpty()}.debounce(5000).collectLatest {runCatching {app.wear.publish(it)}}};viewModelScope.launch {combine(stateRecords,wellbeingSettings) { rows, settings->rows to settings }.filter {it.second.enabled&&uk.co.james.state.hasWellbeingEvidence(it.first)}.debounce(8000).collectLatest {(rows,settings)->runCatching {repo.persistWellbeing(uk.co.james.state.mentalWellbeing(rows,settings))}}};viewModelScope.launch {stateRecords.filter {it.isNotEmpty()}.debounce(6000).collectLatest {rows->runCatching {repo.persistBodyBattery(bodyBattery(rows,trigger="records_refresh"))}}};viewModelScope.launch {combine(stateRecords,energyTimeSettings){rows,settings->rows to settings}.filter {uk.co.james.state.hasRightNowEvidence(it.first)}.debounce(9000).collectLatest {(rows,settings)->runCatching {repo.persistRightNow(rightNowSummary(rows,settings))}}};viewModelScope.launch {runCatching {app.wear.refreshConnection()}};viewModelScope.launch(Dispatchers.IO) {runCatching {repo.recoverInterruptedCalibrationAnalysis();repo.ensureCalibrationProfiles();repo.bootstrapCalibrationEvidence()}}}
     fun action(job:suspend ()->Unit) {if(!busy.compareAndSet(false,true))return;viewModelScope.launch {try{job()}catch(e:CancellationException){throw e}catch(e:Exception){message.value=e.message?:"The change could not be saved."}finally{busy.value=false}}}
     fun saveCurrentPlace(name:String,category:String)=action {
         placeCalibration.value=PlaceCalibrationUiState("Checking current location…","Using an existing fix immediately only when it is fresh and accurate.",true)

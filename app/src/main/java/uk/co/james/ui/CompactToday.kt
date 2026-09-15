@@ -63,20 +63,25 @@ internal fun prepareCompactToday(
     records:List<StoredRecord>,clock:Instant,day:JamesDayWindow,nutrition:NutritionTodayUi,
     right:RightNowSummary,wellbeing:MentalWellbeingSummary,health:WhoopOverviewSnapshot,
     context:ContextLoadSummary,life:LifeBalanceSummary,wearSignals:Map<String,StoredRecord>,
-    settings:EnergyTimeSettings
+    settings:EnergyTimeSettings,
+    hasUserHistory:Boolean
 ):CompactTodayUi {
+    // Mathematical priors let the engines remain stable while learning, but
+    // they are not observations and must never be presented as current facts.
+    val wellbeingEvidence=hasWellbeingEvidence(records)
+    val currentEvidence=hasRightNowEvidence(records)
     val primary=listOf(
         CompactMetricUi("body_battery","BODY BATTERY",health.battery.value,reserveLabel(health.battery.value)),
-        CompactMetricUi("live_energy","LIVE ENERGY",right.liveEnergy.score,right.liveEnergy.label),
-        CompactMetricUi("sleepiness","SLEEPINESS",right.sleepiness.score,right.sleepiness.label),
-        CompactMetricUi("mental_reserve","MENTAL RESERVE",wellbeing.reserve.score,wellbeing.reserve.label,wellbeing.reserve.trend)
+        CompactMetricUi("live_energy","LIVE ENERGY",right.liveEnergy.score.takeIf {currentEvidence},if(currentEvidence)right.liveEnergy.label else "LEARNING"),
+        CompactMetricUi("sleepiness","SLEEPINESS",right.sleepiness.score.takeIf {wellbeingEvidence},if(wellbeingEvidence)right.sleepiness.label else "LEARNING"),
+        CompactMetricUi("mental_reserve","MENTAL RESERVE",wellbeing.reserve.score.takeIf {wellbeingEvidence},if(wellbeingEvidence)wellbeing.reserve.label else "LEARNING",wellbeing.reserve.trend.takeIf {wellbeingEvidence})
     )
     val stress=wearSignals["James Stress"]?.data()?.number("value",Double.NaN)?.takeIf(Double::isFinite)?.toInt()?.coerceIn(0,100)
     val mental=buildList {
         add(CompactMetricUi("james_stress","STRESS",stress,loadLabel(stress)))
-        add(CompactMetricUi("anxiety_load","ANXIETY",wellbeing.anxiety.score,wellbeing.anxiety.label,wellbeing.anxiety.trend))
-        add(CompactMetricUi("low_mood_load","LOW-MOOD",wellbeing.lowMood.score,wellbeing.lowMood.label,wellbeing.lowMood.trend))
-        if(settings.timePressure)add(CompactMetricUi("time_pressure","TIME PRESSURE",right.timePressure.score,right.timePressure.label))
+        add(CompactMetricUi("anxiety_load","ANXIETY",wellbeing.anxiety.score.takeIf {wellbeingEvidence},if(wellbeingEvidence)wellbeing.anxiety.label else "LEARNING",wellbeing.anxiety.trend.takeIf {wellbeingEvidence}))
+        add(CompactMetricUi("low_mood_load","LOW-MOOD",wellbeing.lowMood.score.takeIf {wellbeingEvidence},if(wellbeingEvidence)wellbeing.lowMood.label else "LEARNING",wellbeing.lowMood.trend.takeIf {wellbeingEvidence}))
+        if(settings.timePressure)add(CompactMetricUi("time_pressure","TIME PRESSURE",right.timePressure.score.takeIf {currentEvidence},if(currentEvidence)right.timePressure.label else "LEARNING"))
     }
     val summary=compactCurrentSummary(right.liveEnergy.score,right.sleepiness.score,health.battery.value,wellbeing.reserve.score)
     val candidates=compactPromotions(right.crashRisk.score,right.crashRisk.label,right.timePressure.score,right.timePressure.label,right.nextConstraint?.usableMinutes,right.nextConstraint?.title,context.difficultActive,context.difficultMinutes,settings)
@@ -116,7 +121,7 @@ internal fun prepareCompactToday(
     val due=records.filter {uk.co.james.routines.Habits.due(it.raw(),today())}
     val personal=records.filter {it.store=="personalRecords"}.map {it.raw()}
     val routineLines=if(due.isEmpty()) emptyList() else listOf("${due.count {uk.co.james.routines.Habits.complete(personal,it.recordId,today())}} / ${due.size} complete")
-    return CompactTodayUi(primary,mental,summary,candidates,nutritionLines,workLines,activityLines,timeLines,placeLines,sleepLines,timeline,routineLines,records.none {it.store=="loggedEvents"})
+    return CompactTodayUi(primary,mental,summary.takeIf {currentEvidence},candidates.takeIf {currentEvidence}.orEmpty(),nutritionLines,workLines,activityLines,timeLines,placeLines,sleepLines,timeline,routineLines,!hasUserHistory)
 }
 
 internal fun compactCurrentSummary(liveEnergy:Int,sleepiness:Int,bodyBattery:Int?,mentalReserve:Int):String?=when {

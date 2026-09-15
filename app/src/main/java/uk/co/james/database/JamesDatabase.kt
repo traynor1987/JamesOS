@@ -50,6 +50,9 @@ interface JamesDao {
     // than the history window would silently stop affecting production.
     @Query("SELECT * FROM records WHERE timestamp>=:since OR store IN ('metadata','settings','loggedEvents','eventTemplates') OR kind IN ('Routine','CalibrationProfile') ORDER BY store,recordId") suspend fun stateInputs(since:String):List<StoredRecord>
     @Query("SELECT * FROM records WHERE timestamp>=:since OR store IN ('metadata','settings','loggedEvents','eventTemplates') OR kind IN ('Routine','CalibrationProfile') ORDER BY store,recordId") fun observeStateInputs(since:String):Flow<List<StoredRecord>>
+    /** A cheap readiness query.  UI must not mistake an as-yet-unloaded Room
+     * stream for an actually empty James OS installation. */
+    @Query("SELECT EXISTS(SELECT 1 FROM records WHERE store NOT IN ('metadata','settings','eventTemplates') AND kind NOT IN ('CalibrationProfile','CalibrationCandidate','CalibrationEvent'))") fun observeHasUserHistory():Flow<Boolean>
     @Query("SELECT * FROM records WHERE (timestamp BETWEEN :start AND :end) OR store IN ('metadata','settings','eventTemplates') OR kind IN ('Routine','CalibrationProfile') ORDER BY timestamp, store, recordId") fun observeRouteWindow(start:String,end:String):Flow<List<StoredRecord>>
     @Query("SELECT * FROM records WHERE store = :store AND recordId = :id") suspend fun get(store: String, id: String): StoredRecord?
     @Query("SELECT * FROM records WHERE store=:store AND recordId IN (:ids)") suspend fun getByIds(store:String,ids:List<String>):List<StoredRecord>
