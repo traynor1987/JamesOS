@@ -7,7 +7,10 @@ import uk.co.james.core.*
 import uk.co.james.database.StoredRecord
 import uk.co.james.location.ownershipIntervals
 import uk.co.james.location.ownershipSummary
-enum class VisitType { PERSONAL, NEUTRAL, OBLIGATION, UNKNOWN }
+import uk.co.james.time.jamesDayWindow
+/** Situation only. Legacy PERSONAL/NEUTRAL/OBLIGATION values are retained for
+ * imported history; they are never treated as Time Ownership. */
+enum class VisitType { HOME, WORK, DRIVING, SHOPPING, FAMILY, SOCIAL, APPOINTMENT, ERRAND, LEISURE, PERSONAL_PROJECT, RESTING, OTHER, PERSONAL, NEUTRAL, OBLIGATION, UNKNOWN }
 enum class ContextLoadLabel { VERY_LOW, LOW, MODERATE, HIGH, VERY_HIGH }
 enum class DifficultInteractionType { RAISED_VOICE, DISMISSED, CONTROLLING, ARGUMENT, INSULT_HOSTILITY, OTHER }
 data class ContextPeriod(val id:String,val start:Instant,val end:Instant?,val visitType:VisitType,val placeId:String?,val placeName:String?,val source:String,val jamesDayId:String?)
@@ -30,7 +33,10 @@ fun currentContext(records:List<StoredRecord>,clock:Instant=Instant.now()):Conte
  return ContextLoadSummary(score,label,active,activeD,minutes,note,if(activeD||interactions>0)"MODERATE" else "LOW")
 }
 private fun window(rows:List<StoredRecord>,clock:Instant,days:Int):LifeBalanceWindow {
- val from=clock.minus(Duration.ofDays(days.toLong()));val ledger=ownershipSummary(ownershipIntervals(rows,from,clock));val ps=rows.mapNotNull {it.period()}.filter {it.start<clock&&(it.end?:clock)>from}
+ // The rolling window is anchored to the current James Day boundary (accepted
+ // main-sleep end), never a midnight reset. Historical intervals are clipped
+ // to that bounded window before ownership arithmetic.
+ val from=jamesDayWindow(rows,clock).start.minus(Duration.ofDays((days-1).toLong()));val ledger=ownershipSummary(ownershipIntervals(rows,from,clock));val ps=rows.mapNotNull {it.period()}.filter {it.start<clock&&(it.end?:clock)>from}
  val personal=ledger.autonomousMinutes;val obligation=ledger.committedMinutes
  val difficult=rows.filter {it.kind=="ContextDifficultInterval"}.sumOf {r->r.fieldTime("start")?.let {overlap(it,r.fieldTime("end")?:clock,from,clock)}?:0}
  val activities=rows.count {it.kind=="LifeFactActivity"&&it.timestamp.takeIf(::validTime)?.let {t->Instant.parse(t) in from..clock}==true}
