@@ -88,6 +88,7 @@ internal fun providerSyncStatus(stamp:String,now:Instant=Instant.now()):String {
         {DataStatusCard(vm)},
         crash?.let { report -> { JamesCard("Last app crash","LOCAL BETA DIAGNOSTIC") {
             Text("${report.exceptionType.substringAfterLast('.')} · ${report.occurredAt}")
+            Text("Stage: ${report.stage.ifBlank {"unknown"}}")
             Text("Route: ${report.previousRoute.ifBlank {"unknown"}} → ${report.route.ifBlank {"unknown"}}")
             Muted("Phase: ${report.uiPhase.ifBlank {"unknown"}} · app ${report.appVersion} · database ${report.databaseSchemaVersion}")
             if(report.message.isNotBlank())Muted(report.message)

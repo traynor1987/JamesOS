@@ -78,8 +78,8 @@ import kotlin.math.abs
             TodayPrepared(personal,routines,routines.count {Habits.complete(personal,it.recordId,today())},day,
                 moments,nutrition,right,context,balance,health,wearSignals,wellbeing,compact)
         }) } catch(error:CancellationException) { throw error } catch(error:Throwable) {
-            vm.recordUiPhase("today_preparation_failed:${error.javaClass.simpleName}")
-            TodayPreparation.Failed(error.javaClass.simpleName)
+            vm.recordTodayPreparationFailure(error)
+            TodayPreparation.Failed(error.javaClass.simpleName,uk.co.james.diagnostics.jamesStackFrames(error).firstOrNull())
         }
     }
     if(preparation is TodayPreparation.Loading) {
@@ -88,7 +88,7 @@ import kotlin.math.abs
     }
     if(preparation is TodayPreparation.Failed) {
         val failure=preparation as TodayPreparation.Failed
-        AdaptiveCards(listOf({PageTitle("Good morning, James.",LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE d MMMM")))},{JamesCard("Health monitor","Current health context unavailable") {Muted("Preparation stopped safely (${failure.type}). Your saved history has not been changed.");Button(onClick=vm::retryTodayPreparation,modifier=Modifier.fillMaxWidth()){Text("RETRY")}}}),listOf("title","health-monitor-error"))
+        AdaptiveCards(listOf({PageTitle("Good morning, James.",LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE d MMMM")))},{JamesCard("Health monitor","Current health context unavailable") {Muted("Preparation stopped safely (${failure.type}${failure.firstJamesFrame?.let {" · $it"}.orEmpty()}). Your saved history has not been changed.");Muted("Technical details are available in Advanced & Diagnostics.");Button(onClick=vm::retryTodayPreparation,modifier=Modifier.fillMaxWidth()){Text("RETRY")}}}),listOf("title","health-monitor-error"))
         return
     }
     val ready=(preparation as TodayPreparation.Ready).value
@@ -134,7 +134,7 @@ internal data class TodayPrepared(val personal:List<JsonObject>,val routines:Lis
 internal sealed interface TodayPreparation {
     data object Loading:TodayPreparation
     data class Ready(val value:TodayPrepared):TodayPreparation
-    data class Failed(val type:String):TodayPreparation
+    data class Failed(val type:String,val firstJamesFrame:String?):TodayPreparation
 }
 private fun NutritionTodayUi.hasData()=listOf(calories,protein,carbs,fat,waterMl,caffeine).any {it!=null}
 

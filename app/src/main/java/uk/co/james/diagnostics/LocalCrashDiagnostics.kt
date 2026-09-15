@@ -10,6 +10,7 @@ import java.time.Instant
  */
 data class LocalCrashReport(
     val occurredAt:String,
+    val stage:String,
     val exceptionType:String,
     val message:String,
     val jamesFrames:List<String>,
@@ -20,10 +21,31 @@ data class LocalCrashReport(
     val databaseSchemaVersion:Int
 )
 
+/**
+ * The same privacy-safe technical summary is used for uncaught crashes and
+ * contained component failures. It intentionally never serialises record
+ * data, health values, coordinates, notes, or provider payloads.
+ */
+internal data class LocalDiagnosticDetails(
+    val stage:String,
+    val exceptionType:String,
+    val message:String,
+    val jamesFrames:List<String>
+) {
+    val firstJamesFrame:String? get()=jamesFrames.firstOrNull()
+}
+
 internal fun jamesStackFrames(error:Throwable):List<String> = error.stackTrace
     .filter { it.className.startsWith("uk.co.james") }
     .take(16)
     .map { "${it.className.substringAfterLast('.')}.${it.methodName}:${it.lineNumber}" }
+
+internal fun localDiagnosticDetails(stage:String,error:Throwable)=LocalDiagnosticDetails(
+    stage=stage,
+    exceptionType=error.javaClass.name,
+    message=error.message.orEmpty().take(300),
+    jamesFrames=jamesStackFrames(error)
+)
 
 class LocalCrashDiagnostics(private val context:Context) {
     private val prefs=context.getSharedPreferences("local-crash-diagnostics",Context.MODE_PRIVATE)
@@ -42,14 +64,16 @@ class LocalCrashDiagnostics(private val context:Context) {
     fun setRoute(value:String) { if(route!=value) { previousRoute=route;route=value } }
     fun setUiPhase(value:String) { uiPhase=value.take(120) }
 
-    fun record(error:Throwable) {
+    fun record(error:Throwable,stage:String="uncaught") {
         val version=runCatching {
             context.packageManager.getPackageInfo(context.packageName,0).versionName.orEmpty()
         }.getOrDefault("unknown")
-        val frames=jamesStackFrames(error).joinToString("\n")
+        val details=localDiagnosticDetails(stage,error)
+        val frames=details.jamesFrames.joinToString("\n")
         prefs.edit().putString("occurredAt",Instant.now().toString())
-            .putString("exceptionType",error.javaClass.name)
-            .putString("message",error.message.orEmpty().take(300))
+            .putString("stage",details.stage)
+            .putString("exceptionType",details.exceptionType)
+            .putString("message",details.message)
             .putString("frames",frames)
             .putString("route",route)
             .putString("previousRoute",previousRoute)
@@ -63,7 +87,7 @@ class LocalCrashDiagnostics(private val context:Context) {
         val occurredAt=prefs.getString("occurredAt","").orEmpty()
         if(occurredAt.isBlank()) return null
         return LocalCrashReport(
-            occurredAt,prefs.getString("exceptionType","").orEmpty(),prefs.getString("message","").orEmpty(),
+            occurredAt,prefs.getString("stage","uncaught").orEmpty(),prefs.getString("exceptionType","").orEmpty(),prefs.getString("message","").orEmpty(),
             prefs.getString("frames","").orEmpty().lineSequence().filter {it.isNotBlank()}.toList(),
             prefs.getString("route","").orEmpty(),prefs.getString("previousRoute","").orEmpty(),prefs.getString("uiPhase","").orEmpty(),
             prefs.getString("version","").orEmpty(),prefs.getInt("schema",0)

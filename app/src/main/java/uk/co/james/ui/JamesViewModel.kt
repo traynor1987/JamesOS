@@ -135,6 +135,14 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
     }
     fun navigate(value: String,main: Boolean=false) {app.crashDiagnostics.setRoute(value);saved["route"]=value;if(main)saved["tab"]=value}
     fun recordUiPhase(phase:String) { app.crashDiagnostics.setUiPhase(phase) }
+    /** A contained preparation failure is diagnostic evidence, not an app crash.
+     * Keep its technical frame locally so the next beta report names the exact
+     * source line without retaining any personal payload. */
+    fun recordTodayPreparationFailure(error:Throwable) {
+        app.crashDiagnostics.record(error,"today_preparation")
+        localCrashReport.value=app.crashDiagnostics.read()
+        recordUiPhase("today_preparation_failed:${error.javaClass.simpleName}")
+    }
     fun retryTodayPreparation() { todayPreparationRetry.value++ }
     fun clearLocalCrashReport() { app.crashDiagnostics.clear();localCrashReport.value=null }
     fun date(value: String) {if(validDate(value))saved["date"]=value}

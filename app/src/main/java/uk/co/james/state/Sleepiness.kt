@@ -134,7 +134,14 @@ fun sleepiness(records:List<StoredRecord>,clock:Instant=Instant.now(),zone:ZoneI
     val final=JamesCalibrationEngine.applyActiveScore(baseExpressed,records,"sleepiness")
     val processing=whoopSleepPending(records,clock)
     val freshness=main?.sleepEnd()?.let {Duration.between(it,clock).toHours()}.let {hours->when {processing->"NEW MAIN SLEEP PROCESSING";main==null->"MAIN SLEEP PENDING OR UNAVAILABLE";hours!=null&&hours<=36->"CURRENT JAMES DAY";else->"STALE"}}
-    val confidence=when {processing||main==null->"LOW";baseline!=null&&sourceRank(main)>=3->"GOOD";else->"MODERATE"}
+    // Historical sleeps can establish a learning baseline before the current
+    // main sleep has arrived from a provider.  That state is valid but low
+    // confidence; never rank a non-existent current sleep.
+    val confidence=when {
+        processing || main==null -> "LOW"
+        baseline!=null && sourceRank(main)>=3 -> "GOOD"
+        else -> "MODERATE"
+    }
     val evidence=buildList {
         if(mainMinutes!=null&&shortSleepContribution>0)add(ContextEvidence("Short main sleep",shortSleepContribution,"${mainMinutes.roundToInt()} min compared with ${need.roundToInt()} min ${if(baseline==null)"conservative learning reference" else "recent personal baseline"}.",main.timestamp,main.source))
         add(ContextEvidence("Time awake",wakeContribution,"Awake ${awakeMinutes/60}h ${awakeMinutes%60}m; wake pressure uses a bounded nonlinear curve.",wake.toString(),main?.source.orEmpty()))

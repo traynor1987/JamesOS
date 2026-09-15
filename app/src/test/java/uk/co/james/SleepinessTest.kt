@@ -103,6 +103,16 @@ class SleepinessTest {
         assertTrue(poor.score in 0..100&&recovered.score in 0..100)
     }
 
+    @Test fun historicalBaselineWithoutCurrentMainSleepRemainsAValidLearningState() {
+        // A delayed provider/current-day handoff can retain several historical
+        // sleeps while the latest valid main sleep has not arrived yet. That is
+        // loading/learning evidence, not permission to dereference `main`.
+        val historicalOnly=history(6,420).filterNot { it.recordId=="history:1" }
+        val result=sleepiness(historicalOnly,clock,ZoneOffset.UTC)
+        assertNull(result.mainSleepMinutes)
+        assertEquals("LOW",result.confidence)
+    }
+
     @Test fun circadianAndWakeCurveUseProvidedClock() {
         val wake=Instant.parse("2026-09-13T00:00:00Z");val rows=history(5,420)+main(420,wake)
         val two=sleepiness(rows,wake.plus(Duration.ofHours(2)),ZoneOffset.UTC)
