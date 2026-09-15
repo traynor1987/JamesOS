@@ -531,4 +531,3 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
     fun wearOpenReadyUpdate()=action {val node=app.wear.refreshConnection().nodeId.ifBlank {error("No connected watch.")};com.google.android.gms.wearable.Wearable.getMessageClient(app).sendMessage(node,"/james/v1/update/open-ready",ByteArray(0)).await();message.value="Opening the saved watch update."}
     fun wearOpenSettings()=action {val node=app.wear.refreshConnection().nodeId.ifBlank {error("No connected watch.")};com.google.android.gms.wearable.Wearable.getMessageClient(app).sendMessage(node,"/james/v1/open/settings",ByteArray(0)).await();message.value="Opening James OS on the watch."}
 }
-~,bšš+¶™Zqç–&ëjØ¨Øš‚z,¶',
