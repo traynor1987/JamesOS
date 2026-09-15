@@ -3,6 +3,34 @@ import java.time.Instant
 import uk.co.james.database.StoredRecord
 import uk.co.james.core.*
 data class Moment(val id: String,val date: String,val timestamp: String,val title: String,val source: String,val detail: String,val approximate: Boolean,val record: StoredRecord)
+private val semanticVisitKinds=setOf("ContextPeriod","LifeFactActivity","OwnershipPeriod","VisitInterruption")
+private fun intervalStart(row:StoredRecord):Instant?=row.data().text("start",row.timestamp).takeIf(::validTime)?.let(Instant::parse)
+private fun intervalEnd(row:StoredRecord):Instant?=row.data().text("end").takeIf(::validTime)?.let(Instant::parse)
+
+/** Presentation-only join. Raw semantic records remain independently stored and
+ * editable, while Timeline can tell the story of one physical Visit once. */
+fun visitNarrative(records:List<StoredRecord>,visit:StoredRecord):List<String> {
+    if(visit.kind!="PlaceVisit")return emptyList()
+    val start=intervalStart(visit)?:return emptyList(); val end=intervalEnd(visit)?:return emptyList()
+    val rows=records.filter { row->
+        row.kind in semanticVisitKinds && row.recordId!=visit.recordId &&
+            intervalStart(row)?.let {it>=start&&it<end}==true
+    }
+    val lines=mutableListOf<String>()
+    rows.filter {it.kind=="ContextPeriod"}.maxByOrNull {it.timestamp}?.data()?.text("visitType")?.takeIf {it.isNotBlank()&&it!="UNKNOWN"}?.let {lines+="Context: "+it.lowercase().replace('_',' ').replaceFirstChar(Char::uppercase)}
+    rows.filter {it.kind=="LifeFactActivity"}.mapNotNull {it.data().text("title").takeIf(String::isNotBlank)}.distinct().take(2).takeIf {it.isNotEmpty()}?.let {lines+="Activity: "+it.joinToString(" · ")}
+    val ownership=rows.filter {it.kind=="OwnershipPeriod"}.map {it.data().text("ownership","UNKNOWN")}.filter {it!="UNKNOWN"}.groupingBy {it}.eachCount()
+    ownership.takeIf {it.isNotEmpty()}?.let {lines+="Time: "+it.entries.joinToString(" · "){(key,count)->key.lowercase().replaceFirstChar(Char::uppercase)+if(count>1)" ×$count" else ""}}
+    val interruptions=rows.count {it.kind=="VisitInterruption"}
+    if(interruptions>0)lines+="Interruptions: $interruptions"
+    return lines
+}
+
+fun isNarratedInsideVisit(record:StoredRecord,visits:List<StoredRecord>):Boolean {
+    if(record.kind !in semanticVisitKinds)return false
+    val start=intervalStart(record)?:return false
+    return visits.any {visit->intervalStart(visit)?.let {from->intervalEnd(visit)?.let {until->start>=from&&start<until}}==true}
+}
 fun timeline(records: List<StoredRecord>): List<Moment> = records.mapNotNull { r ->
     if(r.kind=="PlaceVisit"&&r.data().text("supersededByVisitId").isNotBlank()) return@mapNotNull null
     val raw=r.raw();val d=r.data()

@@ -22,7 +22,7 @@ import uk.co.james.core.*
 import uk.co.james.database.StoredRecord
 import uk.co.james.routines.*
 import uk.co.james.state.*
-import uk.co.james.timeline.timeline
+import uk.co.james.timeline.*
 import uk.co.james.time.*
 import uk.co.james.work.workSessions
 import java.time.*
@@ -282,9 +282,11 @@ private fun stressLevel(score:Double)=when {score<20->"Very low";score<40->"Low"
     }
     // Health Connect can carry the same provider event as a direct API. Keep one
     // compact timeline moment while the database retains both authoritative rows.
-    val entries=rawEntries.groupBy {e->if(e.record.kind=="HealthMetric")runCatching {"health:${e.record.data().text("metric")}:${Instant.parse(e.timestamp).epochSecond/300}"}.getOrDefault(e.id)else e.id}
+    val deduplicated=rawEntries.groupBy {e->if(e.record.kind=="HealthMetric")runCatching {"health:${e.record.data().text("metric")}:${Instant.parse(e.timestamp).epochSecond/300}"}.getOrDefault(e.id)else e.id}
         .map {(_,group)->group.minWith(compareBy {e->if(e.record.data().text("metric")=="Sleep"&&e.source=="whoop")0 else SourcePolicy.priorities[e.record.data().text("metric")]?.indexOf(e.source)?.takeIf {it>=0}?:99})}
         .sortedByDescending {it.timestamp}
+    val visitRows=deduplicated.map {it.record}.filter {it.kind=="PlaceVisit"}
+    val entries=deduplicated.filterNot {isNarratedInsideVisit(it.record,visitRows)}
     LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(horizontal=16.dp,vertical=18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
         item {
             PageTitle("Timeline","JAMES DAY · ${displayDate(day.displayDate)}")
@@ -308,6 +310,7 @@ private fun stressLevel(score:Double)=when {score<20->"Very low";score<40->"Low"
                         Text(if(e.record.kind=="HealthMetric"&&e.record.data().text("metric")=="Sleep"&&e.record.data().flag("nap"))"Nap completed"else e.title,style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold)
                         Text("${if(e.record.kind=="HealthMetric")providerLabel(e.record)else sourceLabel(e.source)}${if(e.approximate)" · Approximate"else ""}",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.primary)
                         if(e.detail.isNotBlank())Text(e.detail,style=MaterialTheme.typography.bodyMedium)
+                        if(e.record.kind=="PlaceVisit")visitNarrative(records,e.record).forEach {Text(it,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
                         if(e.record.store=="loggedEvents") TextButton(onClick={vm.open("RutEvent",e.record)},contentPadding=PaddingValues(0.dp)){Text("Edit event")}
                         else if(e.record.kind in listOf("Event","PlaceVisit","TimeBlock","MoodEntry","DailyReview")) TextButton(onClick={vm.open(e.record.kind,e.record)},contentPadding=PaddingValues(0.dp)){Text("Edit")}
                     }
