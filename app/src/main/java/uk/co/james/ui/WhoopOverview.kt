@@ -59,7 +59,7 @@ private fun currentMetric(records:List<StoredRecord>, metric:String, clock:Insta
                 timestamp<=clock && Duration.between(timestamp,clock)<=Duration.ofHours(36)
             }.getOrDefault(false)
     }.minWithOrNull(compareBy<StoredRecord> {
-        SourcePolicy.priorities[metric]?.indexOf(it.source)?.takeIf {position->position>=0} ?: 99
+        SourcePolicy.rank(metric,it.source)
     // WHOOP updates the active daily cycle in place. Its cycle timestamp can stay
     // at the start of the day while the strain value rises, so freshness must use
     // the source update time before falling back to the event timestamp.

@@ -222,7 +222,7 @@ private fun dayActivities(records:List<StoredRecord>,boundary:Instant,clock:Inst
 
 private fun dayMetric(records:List<StoredRecord>,metric:String,boundary:Instant,clock:Instant):StoredRecord? =
     records.filter {record->record.kind=="HealthMetric"&&record.data().text("metric")==metric&&runCatching {Instant.parse(record.timestamp) in boundary..clock}.getOrDefault(false)}
-        .minWithOrNull(compareBy<StoredRecord> {SourcePolicy.priorities[metric]?.indexOf(it.source)?.takeIf {index->index>=0}?:99}.thenByDescending {it.updatedAt.ifBlank {it.timestamp}})
+        .minWithOrNull(compareBy<StoredRecord> {SourcePolicy.rank(metric,it.source)}.thenByDescending {it.updatedAt.ifBlank {it.timestamp}})
 
 @Composable private fun DayAtAGlance(records:List<StoredRecord>,boundary:JamesDayWindow,clock:Instant) {
     val activities=dayActivities(records,boundary.start,clock)
@@ -282,7 +282,7 @@ private fun stressLevel(score:Double)=when {score<20->"Very low";score<40->"Low"
     // Health Connect can carry the same provider event as a direct API. Keep one
     // compact timeline moment while the database retains both authoritative rows.
     val deduplicated=rawEntries.groupBy {e->if(e.record.kind=="HealthMetric")runCatching {"health:${e.record.data().text("metric")}:${Instant.parse(e.timestamp).epochSecond/300}"}.getOrDefault(e.id)else e.id}
-        .map {(_,group)->group.minWith(compareBy {e->if(e.record.data().text("metric")=="Sleep"&&e.source=="whoop")0 else SourcePolicy.priorities[e.record.data().text("metric")]?.indexOf(e.source)?.takeIf {it>=0}?:99})}
+        .map {(_,group)->group.minWith(compareBy {e->SourcePolicy.rank(e.record.data().text("metric"),e.source)})}
         .sortedByDescending {it.timestamp}
     val visitRows=deduplicated.map {it.record}.filter {it.kind=="PlaceVisit"}
     val entries=deduplicated.filterNot {isNarratedInsideVisit(it.record,visitRows)}

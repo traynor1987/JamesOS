@@ -14,6 +14,9 @@ object SourcePolicy {
         "GigSession" to listOf("gig_tracker")
     )
     val readOnlyAuthorities=setOf("shift_tracker","gig_tracker","health_connect","samsung_health","whoop")
+    /** Lower is better. Unknown sources remain usable fallback evidence but can
+     * never silently outrank a declared provider for the same measurement. */
+    fun rank(metric:String,source:String):Int = priorities[metric]?.indexOf(source)?.takeIf {it>=0} ?: 99
     fun externalKey(source:String,kind:String,externalId:String):String {
         require(source in readOnlyAuthorities && externalId.isNotBlank())
         return "$source:$kind:$externalId"
