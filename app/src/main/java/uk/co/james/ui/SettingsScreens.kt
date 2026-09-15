@@ -25,7 +25,7 @@ import kotlin.math.roundToInt
         {PageTitle("Settings","EVERYTHING HAS A HOME")},
         {SettingsDestinationCard("Display & Today",if(compactToday)"Compact Today" else "Classic Today","Layout, theme and presentation preferences") {vm.navigate("Settings:Display")}},
         {SettingsDestinationCard("Connections & Data",listOf(if(health.granted.isEmpty())"Health Connect not connected" else "Health Connect connected",if(whoopConfigured)"WHOOP connected" else "WHOOP not connected").joinToString(" · "),"Providers, permissions, nutrition and Shift Tracker status") {vm.navigate("Connections")}},
-        {SettingsDestinationCard("Watch & Sensors",if(wear.connected)"${wear.device.ifBlank {"Wear OS"} · connected" else "Watch not connected","Wear companion, sensor choices, sync and watch updates") {vm.navigate("Settings:Watch")}},
+        {SettingsDestinationCard("Watch & Sensors",if(wear.connected)"${wear.device.ifBlank {"Wear OS"}} · connected" else "Watch not connected","Wear companion, sensor choices, sync and watch updates") {vm.navigate("Settings:Watch")}},
         {SettingsDestinationCard("Places & Context","Location, places and movement","Location permissions, known places and context detection") {vm.navigate("Location")}},
         {SettingsDestinationCard("James OS & Calibration","Algorithms and personal tuning","Energy, wellbeing and calibration controls") {vm.navigate("Settings:JamesOS")}},
         {SettingsDestinationCard("Data, Backup & Import","Import Centre","Export, validated restore and backup maintenance") {vm.navigate("Import Centre")}},
