@@ -7,6 +7,7 @@ import uk.co.james.core.*
 import uk.co.james.database.StoredRecord
 import uk.co.james.state.bodyBattery
 import uk.co.james.time.*
+import uk.co.james.timeline.timelineForJamesDay
 
 class JamesDayWindowTest {
     private fun sleep(start:String,end:String,nap:Boolean=false,id:String="sleep")=StoredRecord.from(
@@ -60,5 +61,18 @@ class JamesDayWindowTest {
         val window=jamesDayWindow(listOf(main,nap),Instant.parse("2026-09-12T17:00:00Z"),ZoneOffset.UTC)
         assertEquals(Instant.parse("2026-09-12T12:00:00Z"),window.start)
         assertTrue(window.acceptedMainSleepId!!.contains("main"))
+    }
+
+    @Test fun timeline_uses_the_same_james_day_across_midnight() {
+        val wake="2026-09-12T07:00:00Z"
+        val rows=listOf(
+            sleep("2026-09-11T23:30:00Z",wake),
+            StoredRecord.from("personalRecords",personal("PlaceVisit",fields("title" to p("Home"),"start" to p("2026-09-12T23:00:00Z"),"end" to p("2026-09-13T01:00:00Z"),"durationMin" to p(120)),"visit","gps","2026-09-12T23:00:00Z")),
+            StoredRecord.from("personalRecords",personal("OwnershipPeriod",fields("start" to p("2026-09-13T00:15:00Z"),"end" to p("2026-09-13T00:45:00Z"),"ownership" to p("AUTONOMOUS")),"ownership","manual","2026-09-13T00:15:00Z"))
+        )
+        val day=jamesDayWindow(rows,Instant.parse("2026-09-13T01:30:00Z"),ZoneOffset.UTC)
+        val moments=timelineForJamesDay(rows,day)
+        assertTrue(moments.any {it.id=="visit"})
+        assertTrue(moments.any {it.id=="ownership"})
     }
 }

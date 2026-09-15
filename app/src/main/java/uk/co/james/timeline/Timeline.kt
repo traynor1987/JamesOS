@@ -3,6 +3,7 @@ import java.time.Instant
 import uk.co.james.database.StoredRecord
 import uk.co.james.core.*
 import uk.co.james.location.semanticBelongsToVisit
+import uk.co.james.time.JamesDayWindow
 data class Moment(val id: String,val date: String,val timestamp: String,val title: String,val source: String,val detail: String,val approximate: Boolean,val record: StoredRecord)
 private val semanticVisitKinds=setOf("ContextPeriod","LifeFactActivity","OwnershipPeriod","VisitInterruption")
 private fun intervalStart(row:StoredRecord):Instant?=row.data().text("start",row.timestamp).takeIf(::validTime)?.let(Instant::parse)
@@ -31,6 +32,13 @@ fun isNarratedInsideVisit(record:StoredRecord,visits:List<StoredRecord>):Boolean
     if(record.kind !in semanticVisitKinds)return false
     return visits.any { visit -> semanticBelongsToVisit(record,visit) }
 }
+/** The same bounded James-Day filter used by the Timeline route. Keeping this
+ * pure prevents a calendar-date screen from quietly telling a different story
+ * than Today around midnight or a main-sleep boundary. */
+fun timelineForJamesDay(records:List<StoredRecord>,day:JamesDayWindow):List<Moment> =
+    timeline(records).filter { entry ->
+        entry.timestamp.takeIf(::validTime)?.let(Instant::parse)?.let { it>=day.start&&it<day.end }==true
+    }
 fun timeline(records: List<StoredRecord>): List<Moment> = records.mapNotNull { r ->
     if(r.kind=="PlaceVisit"&&r.data().text("supersededByVisitId").isNotBlank()) return@mapNotNull null
     val raw=r.raw();val d=r.data()

@@ -276,9 +276,8 @@ private fun stressLevel(score:Double)=when {score<20->"Very low";score<40->"Low"
     // Select the James Day containing local noon. The bounded three-day route
     // window supplies sleep/boundary context without reviving historical scans.
     val day=remember(records,selected) { jamesDayWindow(records,selected.atTime(12,0).atZone(ZoneId.systemDefault()).toInstant(),ZoneId.systemDefault()) }
-    val rawEntries=timeline(records).filter {entry->
-        val at=entry.timestamp.takeIf(::validTime)?.let(Instant::parse)
-        at!=null&&at>=day.start&&at<day.end&&(source=="all"||entry.source.contains(source)||(source=="whoop"&&entry.record.data().text("provider").contains("whoop")))
+    val rawEntries=uk.co.james.timeline.timelineForJamesDay(records,day).filter {entry->
+        source=="all"||entry.source.contains(source)||(source=="whoop"&&entry.record.data().text("provider").contains("whoop"))
     }
     // Health Connect can carry the same provider event as a direct API. Keep one
     // compact timeline moment while the database retains both authoritative rows.
