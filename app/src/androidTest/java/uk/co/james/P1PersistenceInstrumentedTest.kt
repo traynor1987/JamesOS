@@ -15,7 +15,6 @@ import uk.co.james.database.JamesDatabase
 import uk.co.james.database.MIGRATION_1_2
 import uk.co.james.database.MIGRATION_2_3
 import uk.co.james.database.MIGRATION_3_4
-import uk.co.james.database.MIGRATION_4_5
 
 @RunWith(AndroidJUnit4::class)
 class P1PersistenceInstrumentedTest {
@@ -35,7 +34,7 @@ class P1PersistenceInstrumentedTest {
             legacy.execSQL("INSERT INTO records VALUES ('metadata','kept','Metadata','james','2026-09-12T00:00:00Z','2026-09-12','2026-09-12T00:00:00Z',NULL,'{}')")
             legacy.version=1
         }
-        val migrated=Room.databaseBuilder(context,JamesDatabase::class.java,name).addMigrations(MIGRATION_1_2,MIGRATION_2_3,MIGRATION_3_4,MIGRATION_4_5).build()
+        val migrated=Room.databaseBuilder(context,JamesDatabase::class.java,name).addMigrations(MIGRATION_1_2,MIGRATION_2_3,MIGRATION_3_4).build()
         try {runBlocking {assertNotNull(migrated.records().get("metadata","kept"))}} finally {migrated.close()}
         context.deleteDatabase(name)
     }

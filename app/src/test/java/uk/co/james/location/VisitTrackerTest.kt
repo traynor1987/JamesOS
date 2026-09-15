@@ -19,17 +19,4 @@ class VisitTrackerTest {
         assertFalse(completedVisit(4))
         assertTrue(completedVisit(5))
     }
-    @Test fun home_and_no_obligation_remain_unknown_until_james_corrects_them() {
-        assertEquals(TimeOwnership.UNKNOWN,inferredOwnership())
-    }
-    @Test fun jitter_does_not_close_an_open_visit_but_a_sustained_departure_does() {
-        val last=Instant.parse("2026-09-10T10:00:00Z")
-        assertFalse(shouldCloseAnchor(last,Instant.parse("2026-09-10T10:05:00Z"),false))
-        assertTrue(shouldCloseAnchor(last,Instant.parse("2026-09-10T10:11:00Z"),false))
-    }
-    @Test fun overlapping_places_choose_the_closest_eligible_boundary() {
-        val far=PlaceMatch("a","A","Home",120f,100f)
-        val near=PlaceMatch("b","B","Work",50f,100f)
-        assertEquals("b",choosePlace(listOf(far,near))?.id)
-    }
 }

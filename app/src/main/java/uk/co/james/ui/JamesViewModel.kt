@@ -148,13 +148,13 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
         val stamp=now()
         val changed=visit.raw().changed("data" to visit.data().changed("ownership" to p(ownership),"ownershipSource" to p("JAMES_CORRECTION"),"ownershipCorrectedAt" to p(stamp)),"updatedAt" to p(stamp))
         repo.save(visit.store,changed,visit.rawJson)
-        repo.save("personalRecords",personal("ContextCorrection",fields("visitId" to p(visit.recordId),"field" to p("ownership"),"value" to p(ownership),"source" to p("JAMES_CORRECTION")),source="manual",timestamp=stamp)
+        repo.save("personalRecords",personal("ContextCorrection",fields("visitId" to p(visit.recordId),"field" to p("ownership"),"value" to p(ownership),"source" to p("JAMES_CORRECTION")),source="manual",timestamp=stamp))
         message.value="Time ownership updated."
     }
     fun addVisitInterruption(visitId:String,reason:String)=action {
         require(reason in listOf("SOMEONE_NEEDED_ME","CHORE_ERRAND","WORK","PHONE_CALL","APPOINTMENT","TRAVEL","CHOSE_TO_STOP","TIRED","OTHER","UNKNOWN"))
         val visit=repo.dao.get("personalRecords",visitId)?:return@action; val stamp=now(); val d=visit.data()
-        repo.save("personalRecords",personal("VisitInterruption",fields("visitId" to p(visit.recordId),"reason" to p(reason),"start" to p(stamp),"end" to JsonNull,"source" to p("JAMES_CORRECTION"),"jamesDayId" to p(d.text("jamesDayId"))),source="manual",timestamp=stamp)
+        repo.save("personalRecords",personal("VisitInterruption",fields("visitId" to p(visit.recordId),"reason" to p(reason),"start" to p(stamp),"end" to JsonNull,"source" to p("JAMES_CORRECTION"),"jamesDayId" to p(d.text("jamesDayId"))),source="manual",timestamp=stamp))
         message.value="Interruption recorded."
     }
     fun mergeVisitWithPrevious(visit:StoredRecord)=action {

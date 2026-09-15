@@ -57,10 +57,8 @@ class LocationSource(private val context: Context,private val repo: JamesReposit
     }
     private suspend fun relabelNearbyUnknownVisits(place:JsonObject,placeId:String) {
         val placeData=place.obj("data")
-        // A new saved Place only labels recent unknown visits.  Historic editing is
-        // explicit; saving Home today must not rewrite years of private evidence.
-        repo.dao.visitsBetween(java.time.Instant.now().minus(java.time.Duration.ofDays(14)).toString(),java.time.Instant.now().toString()).asSequence()
-            .filter { it.data().text("title","Unknown place").let { title->title.isBlank()||title=="Unknown place" } }
+        repo.dao.all().asSequence()
+            .filter { it.kind=="PlaceVisit" && it.data().text("title","Unknown place").let { title->title.isBlank()||title=="Unknown place" } }
             .filter { visit->
                 val result=FloatArray(1)
                 val data=visit.data()
@@ -82,7 +80,7 @@ class LocationSource(private val context: Context,private val repo: JamesReposit
     suspend fun restore() {
         if(!preferences.location.first())return
         if(!precise() || !background()){preferences.location(false);return}
-        val places=repo.dao.places(50)
+        val places=repo.dao.all().filter {it.kind=="Place"}.take(50)
         val client=LocationServices.getGeofencingClient(context)
         client.removeGeofences(pending(PlaceReceiver::class.java,101)).await()
         if(places.isNotEmpty()) {
