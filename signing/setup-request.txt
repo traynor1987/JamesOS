@@ -1,0 +1,1 @@
+Permanent signing setup requested after repository password secret was added.
