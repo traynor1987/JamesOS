@@ -12,10 +12,10 @@
 
 ## Current release
 
-- Phone: 0.3.208
+- Phone: 0.3.209
 - Wear: 0.2.2
 - James Calibration Engine: 1.0.3
-- Release: https://github.com/traynor1987/JamesOS/releases/tag/v0.3.208
+- Release: https://github.com/traynor1987/JamesOS/releases/tag/v0.3.209
 
 ## Today 2.0 / Compact Today
 
@@ -225,3 +225,15 @@ Regression coverage includes parse-once identity and empty-history Life Balance 
 The prior regular validation failure was repository workflow setup, before tests: both jobs failed at the pinned `android-actions/setup-android` step. The successful signed release used the runner's existing `$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager`; public validation now uses that same explicit license/platform setup. Tests remain enabled and unchanged.
 
 The immediate priority remains proving this on a mature synthetic Room dataset/device and keeping all semantic windows explicit. Do not start Shift Tracker Part 2, maps, timers, settings redesign, Wear sampling, stress calibration UI, Time Ownership, new wellbeing features or unrelated polish before that validation is complete.
+
+
+## Settings organisation (2026-09-15)
+
+Settings is a directory, not a second dashboard. The Settings home uses concise current-state summaries and routes to: **Display & Today**, **Connections & Data**, **Watch & Sensors**, **Places & Context**, **James OS & Calibration**, **Data, Backup & Import**, **App & Updates**, and **Advanced & Diagnostics**.
+
+- Existing controls were moved, not recreated: Display owns theme/Compact Today; Connections remains the single authoritative provider, permission, nutrition, WHOOP and Shift Tracker receiver manager; Watch owns Wear companion, sensor choices, sync and Wear updates; Places links to the existing location/context page; James OS & Calibration contains algorithms, energy/time and wellbeing preference keys; backup/import opens the established Import Centre; App & Updates retains the existing signed updater; technical data-source status is under Advanced & Diagnostics.
+- All existing DataStore/Room-backed control implementations and confirmation flows remain unchanged. The duplicate non-functional Shift Tracker placeholder was removed; its working receiver status and reconciliation action remain in Connections.
+- Settings detail pages use the existing responsive adaptive 320dp card grid, so folded/narrow screens stay single-column while unfolded Fold layouts gain a comfortable second column rather than stretched controls. Back from every Settings detail route returns to Settings.
+- The Settings landing page observes only theme/Today preferences plus Health Connect, WHOOP configuration and Wear status. It does not collect records or reintroduce the broad history Flow. Connections and Diagnostics retain their existing bounded state when explicitly opened.
+- SettingsNavigationTest protects category coverage, authoritative Connections/Import Centre ownership and Settings-detail back routing. Settings search is deliberately deferred: the bounded directory and synonym-bearing navigation contract are enough now; no separate search subsystem was added.
+- PR #2 run #21 (34956578949) passed public unit/lint/phone compilation and emulator instrumentation before merge.
