@@ -38,7 +38,7 @@ class AllDayLocationService:Service() {
         val open=PendingIntent.getActivity(this,0,Intent(this,MainActivity::class.java),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val stop=PendingIntent.getService(this,1,Intent(this,AllDayLocationService::class.java).setAction(ACTION_STOP),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val notification=NotificationCompat.Builder(this,CHANNEL)
-            .setSmallIcon(R.drawable.ic_james).setContentTitle("James location timeline")
+            .setSmallIcon(R.drawable.ic_james_notification).setContentTitle("James location timeline")
             .setContentText("Grouping nearby points into private visits").setContentIntent(open)
             .addAction(0,"Stop tracking",stop).setOngoing(true).setCategory(NotificationCompat.CATEGORY_SERVICE).build()
         startForeground(NOTIFICATION_ID,notification)

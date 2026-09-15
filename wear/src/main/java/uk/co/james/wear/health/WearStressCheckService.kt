@@ -63,7 +63,7 @@ class WearStressCheckService:Service() {
         val manager=getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(CHANNEL_ID,"James OS sensor checks",NotificationManager.IMPORTANCE_LOW))
         return NotificationCompat.Builder(this,CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_popup_sync)
+            .setSmallIcon(uk.co.james.wear.R.drawable.ic_james_wear_notification)
             .setContentTitle("James Stress Check")
             .setContentText(text)
             .setOngoing(true)

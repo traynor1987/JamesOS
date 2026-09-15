@@ -9,6 +9,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -69,6 +70,7 @@ private val jamesTypography=Typography(
     }
 }
 @Composable fun Muted(text: String){Text(text,color=MaterialTheme.colorScheme.onSurfaceVariant,style=MaterialTheme.typography.bodyMedium)}
+@Composable fun JamesBrandLockup() {Row(verticalAlignment=androidx.compose.ui.Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)){Icon(painterResource(uk.co.james.R.drawable.ic_james_focus_symbol),contentDescription=null,tint=Color.Unspecified,modifier=Modifier.size(28.dp));Text("James OS",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.ExtraBold)}}
 @Composable fun PageTitle(title: String,eyebrow: String=""){Column(verticalArrangement=Arrangement.spacedBy(7.dp)){if(eyebrow.isNotBlank())Text(eyebrow.uppercase(),color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.labelSmall,letterSpacing=1.5.sp);Text(title,style=MaterialTheme.typography.headlineLarge)}}
 /**
  * Dashboard cards share a reusable slot type. Callers with conditional content can

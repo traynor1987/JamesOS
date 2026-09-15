@@ -1,0 +1,6 @@
+<resources>
+    <style name="Theme.James" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowSplashScreenBackground">@color/james_icon_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_james_focus_symbol</item>
+    </style>
+</resources>

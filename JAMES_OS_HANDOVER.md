@@ -282,6 +282,12 @@ Settings is a directory, not a second dashboard. The Settings home uses concise 
 - SettingsNavigationTest protects category coverage, authoritative Connections/Import Centre ownership and Settings-detail back routing. Settings search is deliberately deferred: the bounded directory and synonym-bearing navigation contract are enough now; no separate search subsystem was added.
 - PR #2 run #21 (34956578949) passed public unit/lint/phone compilation and emulator instrumentation before merge.
 
+## Focus/J brand identity and primary navigation (2026-09-15)
+
+The approved James OS identity is the lime Focus/J power mark on a near-black field. Phone launcher resources use an Android adaptive icon: dark background, safe-bounded vector foreground and a monochrome Android themed-icon variant. The mark contains no product text at launcher size. The same vector geometry is used for the compact in-app `[mark] James OS` top-app-bar lockup, Wear launcher/tile preview and simplified monochrome notification icons. Android 12+ splash uses the mark on the dark brand background; it remains intentionally static and fast.
+
+Primary bottom navigation is now exactly **Today · Timeline · Me · Insights · Settings**. Settings opens the existing organised Settings home; it is not a second settings system. The redundant global top-bar gear was removed, while contextual controls remain where they configure a specific feature. Nova remains preserved in code as deferred/experimental architecture but is not a primary destination until it has a real provider, purpose and privacy contract. Package ID, app label and permanent signing identity are unchanged.
+
 ## Product audit remediation (2026-09-15)
 
 `JAMES_OS_PRODUCT_AUDIT.md` remains the historical source-first audit snapshot. Its implementation-status companion is **`JAMES_OS_PRODUCT_AUDIT_REMEDIATION.md`**; read both before changing semantic/day architecture.

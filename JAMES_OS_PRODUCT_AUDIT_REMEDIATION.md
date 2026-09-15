@@ -19,7 +19,7 @@
 | Map repeated pins | Repeated visits stacked on a point | Co-located Visit pins group into a review entry; map remains pin-based, no route trail | Resolved |
 | Save current Place calibration | A low-power/balanced fused fix up to ±200m could fail with the misleading instruction to “try outdoors” | Existing timeline anchors are reused only when fresh (≤1 minute) and accurate (≤±30m); otherwise one explicit high-accuracy Fused fix is requested, then accepted/rejected with the actual age/accuracy/provider reason | Resolved in code; deterministic calibration-policy tests cover stale, inaccurate, timeout, provider failure and fresh-anchor cases |
 | Provider freshness/reconciliation | Connected status could be interpreted as fresh evidence and source ranking was repeated | Connections and diagnostics distinguish not-synced, fresh, aging and stale; `SourcePolicy.rank` now supplies one display priority for equivalent provider metrics | Resolved; source metrics retain their own freshness policy |
-| Nova | Prominent but no provider existed | Removed from primary navigation; implementation retained but not presented as working | Resolved |
+| Nova | Prominent but no provider existed | Preserved as deferred code but absent from the stable five-destination navigation; Settings now opens the existing Settings directory | Resolved; `JamesPrimaryNavigation` contract test |
 
 ## Authoritative semantic policy
 
