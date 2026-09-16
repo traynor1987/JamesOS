@@ -201,7 +201,7 @@ class StateEngineTest {
             "ownership" to p("AUTONOMOUS"),"ownershipSource" to p("JAMES_CONFIRMED"),
             "start" to p(base.minus(Duration.ofDays(14)).toString()),"end" to p(base.toString())
         ),"stable-autonomy","manual",base.minus(Duration.ofDays(14)).toString()))
-        assertEquals("STABLE →",mentalWellbeing(listOf(ownership),clock=base,zone=ZoneOffset.UTC).lowMood.trend)
+        assertEquals("INSUFFICIENT TREND EVIDENCE",mentalWellbeing(listOf(ownership),clock=base,zone=ZoneOffset.UTC).lowMood.trend)
     }
 
     @Test fun exerciseSuppressesExertionLikeAnxietyAndSelfReportIsBounded() {
