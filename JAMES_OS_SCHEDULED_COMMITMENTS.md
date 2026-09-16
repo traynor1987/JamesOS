@@ -25,3 +25,9 @@ James OS discovers only the stable Shift Tracker package and queries its protect
 Time Pressure v1.1.0 accepts eligible timed Scheduled Commitments as its next known fixed constraint. Only explicit preparation buffers reduce usable time; travel is never guessed. A schedule never writes actual ownership. Matching Visit/activity/manual evidence can support future reconciliation; missing GPS is not non-attendance.
 
 Scheduled commitments, selection, classification and rule records use the ordinary backup records; provider schedule can be refreshed while confirmed actual facts remain preserved.
+
+## Shift deletion / provider retraction (2026-09-17)
+
+Deleting a real Shift Tracker shift is a source-authoritative factual retraction, not a test-only path. Shift Tracker emits a durable `SHIFT_RETRACTED` tombstone using the deleted shift's stable ID, deterministic revision and deletion timestamp. The normal signature-protected v2 bridge replays that tombstone after temporary app unavailability.
+
+James OS stores the tombstone and uses Shift Tracker shift provenance to remove only that shift's mirrored `WorkEvent`, Work `OwnershipPeriod`, and Shift Tracker activity-context rows. Manual ownership corrections, Visits, Calendar commitments, health/calibration records, and other shifts remain untouched. Replaying the same tombstone is idempotent; delayed older work events cannot resurrect a retracted shift. Derived views recompute from the remaining factual ledger.

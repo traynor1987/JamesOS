@@ -41,6 +41,7 @@ fun timelineForJamesDay(records:List<StoredRecord>,day:JamesDayWindow):List<Mome
     }
 fun timeline(records: List<StoredRecord>): List<Moment> = records.mapNotNull { r ->
     if(r.kind=="PlaceVisit"&&r.data().text("supersededByVisitId").isNotBlank()) return@mapNotNull null
+    if(r.source=="shift_tracker"&&r.kind=="WorkEvent"&&r.data().flag("deleted")) return@mapNotNull null
     val raw=r.raw();val d=r.data()
     when {
         r.store=="loggedEvents" -> Moment(r.recordId,r.localDate,r.timestamp,raw.text("title"),"Routines · RUT","${raw.number("points").toLong()} points · ${raw.text("note")}",raw.text("timeAccuracy")=="approximate",r)

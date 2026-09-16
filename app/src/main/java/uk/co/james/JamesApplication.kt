@@ -7,6 +7,7 @@ import uk.co.james.database.MIGRATION_2_3
 import uk.co.james.database.MIGRATION_3_4
 import uk.co.james.database.MIGRATION_4_5
 import uk.co.james.database.MIGRATION_5_6
+import uk.co.james.database.MIGRATION_6_7
 import uk.co.james.data.JamesRepository
 import uk.co.james.settings.Preferences
 import uk.co.james.health.HealthSource
@@ -19,7 +20,7 @@ import kotlinx.coroutines.*
 import uk.co.james.location.reconstructLegacyVisits
 import uk.co.james.diagnostics.LocalCrashDiagnostics
 class JamesApplication : Application() {
-    val database by lazy { Room.databaseBuilder(this,JamesDatabase::class.java,"james-native.db").addMigrations(MIGRATION_1_2,MIGRATION_2_3,MIGRATION_3_4,MIGRATION_4_5,MIGRATION_5_6).build() }
+    val database by lazy { Room.databaseBuilder(this,JamesDatabase::class.java,"james-native.db").addMigrations(MIGRATION_1_2,MIGRATION_2_3,MIGRATION_3_4,MIGRATION_4_5,MIGRATION_5_6,MIGRATION_6_7).build() }
     val repository by lazy { JamesRepository(this,database) }
     val preferences by lazy { Preferences(this) }
     val health by lazy { HealthSource(this,repository) }

@@ -118,4 +118,33 @@ class WorkContextTest {
         assertEquals(1,rows.count {it.kind=="OwnershipPeriod"&&it.data().text("ownership")=="WORK"})
         assertEquals(2,rows.count {it.kind=="LifeFactActivity"&&it.source=="shift_tracker"})
     }
+
+    @Test fun shiftRetractionRemovesOnlyShiftTrackerFactsForThatShift() = runBlocking {
+        provider.ingest(listOf(
+            event("start", WorkEventType.SHIFT_STARTED, "2026-09-14T11:02:00Z"),
+            event("delivery", WorkEventType.DELIVERY_STARTED, "2026-09-14T12:00:00Z"),
+            event("end", WorkEventType.SHIFT_ENDED, "2026-09-14T19:07:00Z")
+        ), now)
+        repository.dao.put(StoredRecord.from("personalRecords", uk.co.james.core.personal(
+            "OwnershipPeriod", uk.co.james.core.fields(
+                "start" to uk.co.james.core.p("2026-09-14T12:30:00Z"),
+                "ownership" to uk.co.james.core.p("PERSONAL"),
+                "ownershipSource" to uk.co.james.core.p("JAMES_CONFIRMED")
+            ), "manual-ownership", "manual", "2026-09-14T12:30:00Z"
+        )))
+
+        val retraction = CanonicalWorkEvent(
+            "shift-a:SHIFT_RETRACTED", "shift-a", WorkEventType.SHIFT_RETRACTED,
+            Instant.parse("2026-09-15T09:00:00Z"), 2, deleted = true
+        )
+        assertEquals(1, provider.ingest(listOf(retraction), now))
+
+        val rows = repository.stateInputs(now)
+        assertEquals(0, rows.count { it.kind == "OwnershipPeriod" && it.source == "shift_tracker" })
+        assertEquals(0, rows.count { it.kind == "LifeFactActivity" && it.source == "shift_tracker" })
+        assertEquals(0, workEvents(rows).count { it.externalShiftId == "shift-a" })
+        assertEquals(1, rows.count { it.recordId == "manual-ownership" })
+        assertEquals(WorkMode.OFF_WORK, deriveCurrentWorkState(rows, now).mode)
+        assertEquals(0, provider.ingest(listOf(retraction), now))
+    }
 }

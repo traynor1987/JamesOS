@@ -391,3 +391,7 @@ Timeline now calls one pure James-Day filter with an overnight test. Provider di
 ### Shift Tracker connection correction (2026-09-17)
 
 The first Scheduled Commitments release left stale UI text saying **Contract v1** / “waiting for Part 2”, while the receiver was already v2. It also used `MATCH_DEFAULT_ONLY` for a protected broadcast receiver and Shift Tracker’s sender targeted a namespace rather than James OS’s stable Android package. James OS’s next maintenance release fixes the receiver discovery/visibility and truthful status; Shift Tracker **2.2.66** targets `uk.co.james.personal`. Both applications must be updated for the factual work/rota hand-off to function.
+
+### Shift Tracker production deletion/retraction (2026-09-17)
+
+Shift deletion now uses an explicit normal-provider retraction path. A deleted Shift Tracker shift emits/replays a `SHIFT_RETRACTED` tombstone keyed by its stable external shift ID. James OS schema v7 records `sourceShiftId` for new Shift Tracker facts and has an upgrade-safe fallback for older rows. Retraction removes only the mirrored Work interval, work-event/activity context and affected derived views; it retains James-confirmed ownership, Visits, Calendar, health/calibration and other shifts. Never replace this contract with a test-only fake-shift path.

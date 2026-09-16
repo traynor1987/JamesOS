@@ -47,7 +47,7 @@ internal fun shiftTrackerReceiverPackage(packages: Iterable<String>): String? =
 enum class WorkEventType {
     SHIFT_STARTED, SHIFT_ENDED, BREAK_STARTED, BREAK_ENDED,
     DELIVERY_STARTED, DELIVERY_COMPLETED, RETURNED_TO_STORE,
-    TASK_STARTED, TASK_ENDED, WORK_STATE_CORRECTION
+    TASK_STARTED, TASK_ENDED, WORK_STATE_CORRECTION, SHIFT_RETRACTED
 }
 
 enum class WorkMode { OFF_WORK, WORKING, AT_STORE, DELIVERY, BREAK, TASK, RECONCILIATION_REQUIRED, UNKNOWN }
@@ -126,6 +126,7 @@ object WorkPayload {
         if (eventId.length !in 1..128 || shiftId.length !in 1..128 || revision !in 0..1_000_000L) return null
         if (occurredAt < Instant.parse("2000-01-01T00:00:00Z") || occurredAt > clock.plus(Duration.ofHours(24))) return null
         fun optional(name: String, max: Int): String? = body.text(name).trim().takeIf { it.isNotEmpty() && it.length <= max }
+        if (type == WorkEventType.SHIFT_RETRACTED && !body.flag("deleted")) return null
         return CanonicalWorkEvent(
             externalEventId = eventId,
             externalShiftId = shiftId,
@@ -153,7 +154,7 @@ object WorkPayload {
                 data.text("externalBreakId").ifBlank { null }, data.text("externalTaskId").ifBlank { null },
                 data.text("taskType").ifBlank { null }
             )
-        }.getOrNull()?.takeIf { it.externalEventId.isNotBlank() && it.externalShiftId.isNotBlank() && it.revision >= 0 }
+        }.getOrNull()?.takeIf { it.externalEventId.isNotBlank() && it.externalShiftId.isNotBlank() && it.revision >= 0 && (it.eventType != WorkEventType.SHIFT_RETRACTED || it.deleted) }
     }
 }
 
@@ -188,6 +189,7 @@ fun workEventTitle(type: WorkEventType): String = when (type) {
     WorkEventType.TASK_STARTED -> "Work task started"
     WorkEventType.TASK_ENDED -> "Work task ended"
     WorkEventType.WORK_STATE_CORRECTION -> "Work state corrected"
+    WorkEventType.SHIFT_RETRACTED -> "Work shift retracted"
 }
 
 internal fun modeAfter(event: WorkEventType, previous: WorkMode): WorkMode = when (event) {
@@ -198,6 +200,7 @@ internal fun modeAfter(event: WorkEventType, previous: WorkMode): WorkMode = whe
     WorkEventType.DELIVERY_STARTED -> WorkMode.DELIVERY
     WorkEventType.TASK_STARTED -> WorkMode.TASK
     WorkEventType.WORK_STATE_CORRECTION -> if (previous == WorkMode.OFF_WORK) WorkMode.WORKING else previous
+    WorkEventType.SHIFT_RETRACTED -> WorkMode.OFF_WORK
 }
 
 fun workSessions(records: List<StoredRecord>, clock: Instant = Instant.now()): List<WorkSession> = workEvents(records)
@@ -256,6 +259,51 @@ fun deriveCurrentWorkState(records: List<StoredRecord>, clock: Instant = Instant
 }
 
 class WorkContextProvider(private val context: Context, private val repository: JamesRepository) {
+    private fun isShiftRetraction(event:CanonicalWorkEvent)=event.eventType==WorkEventType.SHIFT_RETRACTED&&event.deleted
+
+    /** Removes only facts whose provenance is this provider shift. James-made
+     * corrections and independently observed context deliberately remain. */
+    private suspend fun retractShiftFacts(shiftId:String) {
+        // v7 makes this an indexed lookup. The narrow legacy fallback is only
+        // for rows created before the provenance column existed; it preserves
+        // upgrade correctness without putting a historical scan in normal UI.
+        (repository.dao.sourceShiftFacts("shift_tracker",shiftId)+repository.dao.legacySourceShiftFacts("shift_tracker").filter { it.data().text("externalShiftId")==shiftId }).distinctBy { it.store to it.recordId }.forEach { row ->
+            val data=row.data()
+            val remove=when(row.kind) {
+                "WorkEvent" -> WorkPayload.from(row)?.let { !isShiftRetraction(it) }==true
+                "LifeFactActivity" -> true
+                "OwnershipPeriod" -> data.text("ownershipSource")=="SHIFT_TRACKER_ACTUAL"
+                else -> false
+            }
+            if(remove) repository.dao.delete(row.store,row.recordId)
+        }
+    }
+
+    private suspend fun shiftIsRetracted(shiftId:String):Boolean =
+        repository.dao.sourceShiftFacts("shift_tracker",shiftId).any { WorkPayload.from(it)?.let(::isShiftRetraction)==true }
+
+    private suspend fun storeWorkEvent(event:CanonicalWorkEvent,receivedAt:Instant) {
+        val recordId = "shift-tracker-event:" + event.externalEventId
+        val day = jamesDayWindow(repository.stateInputs(event.occurredAt), event.occurredAt).id
+        val raw = personal(
+            "WorkEvent",
+            fields(
+                "externalEventId" to p(event.externalEventId), "externalShiftId" to p(event.externalShiftId),
+                "eventType" to p(event.eventType.name), "occurredAt" to p(event.occurredAt.toString()),
+                "receivedAt" to p(receivedAt.toString()), "revision" to p(event.revision), "deleted" to p(event.deleted),
+                "deliveryType" to (event.deliveryType?.let(::p) ?: JsonNull),
+                "externalDeliveryId" to (event.externalDeliveryId?.let(::p) ?: JsonNull),
+                "externalBreakId" to (event.externalBreakId?.let(::p) ?: JsonNull),
+                "externalTaskId" to (event.externalTaskId?.let(::p) ?: JsonNull),
+                "taskType" to (event.taskType?.let(::p) ?: JsonNull),
+                "jamesDayId" to p(day), "contractVersion" to p(ShiftTrackerWorkContract.VERSION),
+                "title" to p(workEventTitle(event.eventType))
+            ),
+            recordId = recordId, source = "shift_tracker", timestamp = event.occurredAt.toString()
+        ).changed("externalId" to p(event.externalEventId), "updatedAt" to p(receivedAt.toString()))
+        repository.dao.put(StoredRecord.from("personalRecords", raw))
+    }
+
     private suspend fun materializeActualWork(events:List<CanonicalWorkEvent>,receivedAt:Instant) {
         events.groupBy {it.externalShiftId}.forEach { (shiftId,updates) ->
             val start=updates.filter {it.eventType==WorkEventType.SHIFT_STARTED&&!it.deleted}.maxWithOrNull(compareBy<CanonicalWorkEvent>{it.revision}.thenBy{it.occurredAt})
@@ -305,28 +353,22 @@ class WorkContextProvider(private val context: Context, private val repository: 
         require(events.size <= ShiftTrackerWorkContract.MAX_PAGE_SIZE)
         var accepted = 0
         repository.db.withTransaction {
-            events.forEach { event ->
+            val materializable=mutableListOf<CanonicalWorkEvent>()
+            val retracted=events.filter(::isShiftRetraction).mapTo(mutableSetOf()) {it.externalShiftId}
+            events.filter(::isShiftRetraction).forEach { event ->
                 val recordId = "shift-tracker-event:" + event.externalEventId
                 val old = repository.dao.get("personalRecords", recordId)?.let(WorkPayload::from)
                 if (old != null && old.revision >= event.revision) return@forEach
-                val day = jamesDayWindow(repository.stateInputs(event.occurredAt), event.occurredAt).id
-                val raw = personal(
-                    "WorkEvent",
-                    fields(
-                        "externalEventId" to p(event.externalEventId), "externalShiftId" to p(event.externalShiftId),
-                        "eventType" to p(event.eventType.name), "occurredAt" to p(event.occurredAt.toString()),
-                        "receivedAt" to p(receivedAt.toString()), "revision" to p(event.revision), "deleted" to p(event.deleted),
-                        "deliveryType" to (event.deliveryType?.let(::p) ?: JsonNull),
-                        "externalDeliveryId" to (event.externalDeliveryId?.let(::p) ?: JsonNull),
-                        "externalBreakId" to (event.externalBreakId?.let(::p) ?: JsonNull),
-                        "externalTaskId" to (event.externalTaskId?.let(::p) ?: JsonNull),
-                        "taskType" to (event.taskType?.let(::p) ?: JsonNull),
-                        "jamesDayId" to p(day), "contractVersion" to p(ShiftTrackerWorkContract.VERSION),
-                        "title" to p(workEventTitle(event.eventType))
-                    ),
-                    recordId = recordId, source = "shift_tracker", timestamp = event.occurredAt.toString()
-                ).changed("externalId" to p(event.externalEventId), "updatedAt" to p(receivedAt.toString()))
-                repository.dao.put(StoredRecord.from("personalRecords", raw))
+                storeWorkEvent(event,receivedAt)
+                retractShiftFacts(event.externalShiftId)
+                accepted++
+            }
+            events.filterNot(::isShiftRetraction).forEach { event ->
+                if(event.externalShiftId in retracted||shiftIsRetracted(event.externalShiftId)) return@forEach
+                val recordId = "shift-tracker-event:" + event.externalEventId
+                val old = repository.dao.get("personalRecords", recordId)?.let(WorkPayload::from)
+                if (old != null && old.revision >= event.revision) return@forEach
+                storeWorkEvent(event,receivedAt)
                 // Concise factual context for Timeline/Today.  This is not an
                 // ownership row and carries no Balance points; Work ownership
                 // remains the separately materialised shift interval.
@@ -340,9 +382,10 @@ class WorkContextProvider(private val context: Context, private val repository: 
                     val context=personal("LifeFactActivity",fields("title" to p(activity),"activity" to p(activity),"start" to p(event.occurredAt.toString()),"ownershipContext" to p("WORK"),"externalShiftId" to p(event.externalShiftId),"sourceEventId" to p(event.externalEventId),"provenance" to p("Shift Tracker factual activity.")),recordId="shift-tracker-activity:${event.externalEventId}",source="shift_tracker",timestamp=event.occurredAt.toString())
                     repository.dao.put(StoredRecord.from("personalRecords",context))
                 }
+                materializable+=event
                 accepted++
             }
-            materializeActualWork(events,receivedAt)
+            materializeActualWork(materializable,receivedAt)
             val state = personal(
                 "WorkIntegrationState",
                 fields(

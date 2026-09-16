@@ -7,8 +7,8 @@ import kotlinx.serialization.json.JsonObject
 
 private data class PreparedStoredRaw(val value:JsonObject,val issue:String?)
 
-@Entity(tableName = "records", primaryKeys = ["store", "recordId"], indices = [Index("kind"), Index("source"), Index("localDate"), Index("timestamp"), Index(value = ["source", "externalId"]), Index(value=["kind","timestamp"]), Index(value=["source","kind","timestamp"]), Index(value=["store","timestamp"]), Index(value=["algorithmId","timestamp"]), Index(value=["algorithmId","calibrationVersion","timestamp"]), Index(value=["candidateStatus","timestamp"]), Index(value=["jamesDayId","algorithmId","timestamp"]), Index(value=["jamesDayId","timestamp"])])
-data class StoredRecord(val store: String, val recordId: String, val kind: String, val source: String, val timestamp: String, val localDate: String, val updatedAt: String, val externalId: String?, val rawJson: String?, val algorithmId:String?=null, val calibrationVersion:String?=null, val candidateStatus:String?=null, val jamesDayId:String?=null) {
+@Entity(tableName = "records", primaryKeys = ["store", "recordId"], indices = [Index("kind"), Index("source"), Index("localDate"), Index("timestamp"), Index(value = ["source", "externalId"]), Index(value=["source","sourceShiftId"]), Index(value=["kind","timestamp"]), Index(value=["source","kind","timestamp"]), Index(value=["store","timestamp"]), Index(value=["algorithmId","timestamp"]), Index(value=["algorithmId","calibrationVersion","timestamp"]), Index(value=["candidateStatus","timestamp"]), Index(value=["jamesDayId","algorithmId","timestamp"]), Index(value=["jamesDayId","timestamp"])])
+data class StoredRecord(val store: String, val recordId: String, val kind: String, val source: String, val timestamp: String, val localDate: String, val updatedAt: String, val externalId: String?, val rawJson: String?, val algorithmId:String?=null, val calibrationVersion:String?=null, val candidateStatus:String?=null, val jamesDayId:String?=null, val sourceShiftId:String?=null) {
     /** Room rows are immutable. Parsing once per emitted row removes the former
      * parse-on-every-filter/map/sort behaviour without a cross-snapshot cache.
      *
@@ -36,8 +36,9 @@ data class StoredRecord(val store: String, val recordId: String, val kind: Strin
         }
         fun from(store: String, raw: JsonObject): StoredRecord {
             val timestamp = raw.text("timestamp", raw.text("updatedAt", "1970-01-01T00:00:00Z"))
+            val data=raw.obj("data")
             return StoredRecord(store, keyFor(store, raw), raw.text("kind", store), raw.text("source", if (store in rutStores) "rut" else "manual"), timestamp,
-                raw.text("localDate", raw.text("date", raw.obj("data").text("date", if (validTime(timestamp)) dayOf(timestamp) else ""))), raw.text("updatedAt"), raw.text("externalId").ifBlank { null }, canonical(raw), raw.obj("data").text("algorithmId").ifBlank { null }, raw.obj("data").text("calibrationVersion").ifBlank { null }, raw.obj("data").text("status").ifBlank { null }, raw.obj("data").text("jamesDayId").ifBlank { null })
+                raw.text("localDate", raw.text("date", data.text("date", if (validTime(timestamp)) dayOf(timestamp) else ""))), raw.text("updatedAt"), raw.text("externalId").ifBlank { null }, canonical(raw), data.text("algorithmId").ifBlank { null }, data.text("calibrationVersion").ifBlank { null }, data.text("status").ifBlank { null }, data.text("jamesDayId").ifBlank { null }, data.text("externalShiftId").ifBlank { null })
         }
     }
 }
@@ -79,6 +80,14 @@ interface JamesDao {
     @Query("SELECT EXISTS(SELECT 1 FROM records WHERE store NOT IN ('metadata','settings','eventTemplates') AND kind NOT IN ('CalibrationProfile','CalibrationCandidate','CalibrationEvent'))") fun observeHasUserHistory():Flow<Boolean>
     @Query("SELECT * FROM records WHERE (timestamp BETWEEN :start AND :end) OR store IN ('metadata','settings','eventTemplates') OR kind IN ('Routine','CalibrationProfile') ORDER BY timestamp, store, recordId") fun observeRouteWindow(start:String,end:String):Flow<List<StoredRecord>>
     @Query("SELECT * FROM records WHERE store = :store AND recordId = :id") suspend fun get(store: String, id: String): StoredRecord?
+    /** Rare provider retractions use this indexed provenance lookup; ordinary
+     * state/UI flows never scan historical shift evidence. */
+    @Query("SELECT * FROM records WHERE source=:source AND sourceShiftId=:shiftId") suspend fun sourceShiftFacts(source:String,shiftId:String):List<StoredRecord>
+    /** Pre-v7 rows did not have a materialised shift key. This deliberately
+     * remains a retraction-only compatibility read: normal UI never touches
+     * it, and a provider deletion must still be able to retract an older
+     * mirrored shift after an in-place upgrade. */
+    @Query("SELECT * FROM records WHERE source=:source AND sourceShiftId IS NULL AND kind IN ('WorkEvent','LifeFactActivity','OwnershipPeriod')") suspend fun legacySourceShiftFacts(source:String):List<StoredRecord>
     @Query("SELECT * FROM records WHERE store=:store AND recordId IN (:ids)") suspend fun getByIds(store:String,ids:List<String>):List<StoredRecord>
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun put(record: StoredRecord)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putAll(records: List<StoredRecord>)
@@ -89,7 +98,7 @@ interface JamesDao {
     @Insert suspend fun importHistory(record: ImportHistory)
     @Query("SELECT * FROM import_history ORDER BY timestamp DESC") fun imports(): Flow<List<ImportHistory>>
 }
-@Database(entities = [StoredRecord::class, ArchiveRecord::class, ImportHistory::class], version = 6, exportSchema = true)
+@Database(entities = [StoredRecord::class, ArchiveRecord::class, ImportHistory::class], version = 7, exportSchema = true)
 abstract class JamesDatabase : RoomDatabase() {
  abstract fun records(): JamesDao
 }
@@ -147,4 +156,11 @@ val MIGRATION_5_6=object:androidx.room.migration.Migration(5,6){override fun mig
     db.execSQL("CREATE INDEX IF NOT EXISTS index_records_candidateStatus_timestamp ON records(candidateStatus,timestamp)")
     db.execSQL("CREATE INDEX IF NOT EXISTS index_records_jamesDayId_algorithmId_timestamp ON records(jamesDayId,algorithmId,timestamp)")
     db.execSQL("CREATE INDEX IF NOT EXISTS index_records_jamesDayId_timestamp ON records(jamesDayId,timestamp)")
+}}
+
+/** Adds an indexed, factual provenance key so a deleted Shift Tracker shift
+ * can retract only its own materialised records without a broad history scan. */
+val MIGRATION_6_7=object:androidx.room.migration.Migration(6,7){override fun migrate(db:androidx.sqlite.db.SupportSQLiteDatabase){
+    db.execSQL("ALTER TABLE records ADD COLUMN sourceShiftId TEXT")
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_records_source_sourceShiftId ON records(source,sourceShiftId)")
 }}
