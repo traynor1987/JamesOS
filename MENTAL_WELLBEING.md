@@ -9,7 +9,7 @@ The phone is authoritative. No raw health, location, WHOOP credentials, OAuth se
 ## Outputs
 
 - **Anxiety Load** (0–100): a fast physiological/context load estimate. It considers James Stress, resting heart rate, HRV, sleep and recovery relative to personal baselines. When meaningful movement/exercise is present, elevated physiology is explicitly treated as exercise context rather than psychological anxiety.
-- **Low-Mood Load** (0–100): a slow moving, multi-day pattern estimate. It combines Rut direction, sleep/recovery/HRV trends, activity, personal time, activity diversity, and optional self reports. A single poor sleep or one rest day cannot dominate the result.
+- **Low-Mood Load** (0–100): a slow moving, multi-day pattern estimate. It uses bounded Life Balance context, sleep/recovery/HRV trends, activity, personal time, activity diversity, and optional self reports. It does not consume the legacy RUT ledger. A single poor sleep or one rest day cannot dominate the result.
 - **Mental Reserve** (0–100): contextual capacity, not a duplicate of Body Battery. Physical reserve is one contributor alongside Anxiety Load and longer-term context.
 
 Scores use neutral language and include an experimental/not-a-diagnosis notice.
@@ -18,7 +18,7 @@ Scores use neutral language and include an experimental/not-a-diagnosis notice.
 
 The engine uses up to 28 previous days for per-signal median baselines; at least three samples are required for a signal. Confidence is Learning, Low, Moderate, or Good based on history and usable signals. Missing data contributes no penalty and lowers confidence.
 
-Every calculated contributor records source, current value, baseline, direction, weight, confidence, contribution, and an explanation. The UI uses those records for **Why James thinks this**. Rut is directional: moving toward neutral is helping, moving away from neutral can work against the trend only as supporting evidence.
+Every calculated contributor records source, current value, baseline, direction, weight, confidence, contribution, and an explanation. The UI uses those records for **Why James thinks this**. Life Balance is bounded contextual evidence; it is not a direct mood trend or a replacement name for legacy RUT.
 
 ## Persistence and versioning
 
@@ -28,7 +28,7 @@ Future algorithm releases can recalculate historical summaries from source recor
 
 ## Settings and privacy
 
-Settings → Mental wellbeing lets James turn the feature, check-ins, each output, and Rut/exercise/diversity/personal-time/physiology/WHOOP/Health Connect/Wear/Samsung inputs on or off. Disabled sources are excluded; absence of a source is not interpreted negatively.
+Settings → Mental wellbeing lets James turn the feature, check-ins, each output, and Life Balance context/exercise/diversity/personal-time/physiology/WHOOP/Health Connect/Wear/Samsung inputs on or off. Disabled sources are excluded; absence of a source is not interpreted negatively.
 
 Check-ins are voluntary. Phone check-ins may include mood, energy and anxiety-now; Wear sends only the selected five-level mood option over the existing Data Layer.
 

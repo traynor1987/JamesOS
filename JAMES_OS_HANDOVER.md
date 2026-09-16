@@ -37,6 +37,10 @@ Normal Today language is provider-neutral: the existing compact sleep card adds 
 
 The audit's original highest-priority findings are now remediated and tracked with evidence in [JAMES_OS_PRODUCT_AUDIT_REMEDIATION.md](JAMES_OS_PRODUCT_AUDIT_REMEDIATION.md): Health Connect capability/permission parity; non-destructive Visit corrections; incremental legacy Visit reconstruction; Visit-linked semantic periods; and James-Day Timeline filtering. The audit remains a historical snapshot; the remediation matrix and the current code are authoritative for present status. Continue to treat data correctness, provenance, bounded processing and coherent day semantics as prerequisites before adding providers, continuous Wear sampling, AI, prediction or another dashboard.
 
+### RUT → Life Balance succession audit — 2026-09-16
+
+[JAMES_OS_BALANCE_SUCCESSION_AUDIT.md](JAMES_OS_BALANCE_SUCCESSION_AUDIT.md) traces the retained event-led Legacy RUT ledger, its import/backup contract, and the current ownership-based Life Balance v1. It recommends a future factual, coverage-aware Life Balance v2 as RUT’s conceptual successor, not a point-led rename: Legacy RUT remains a separate historical era and never feeds a new composite score. No Balance v2, coefficient, Time Ownership, provider, health or Low Mood algorithm change is implemented by this audit. The only current correction is metadata/UI wording: Low Mood’s bounded input is **Life Balance**, not the legacy RUT ledger.
+
 ## Today 2.0 / Compact Today
 
 Compact Today is the default Today presentation. Settings → Appearance → Today Layout exposes a live `Compact Today` switch; disabling it selects the preserved original `Classic Today` dashboard. The choice is a device-local DataStore presentation preference (`compact-today`, default `true`) and survives process recreation, reboot and app updates. It has no database, health, sync, James Day, algorithm or calibration semantics.

@@ -148,11 +148,11 @@ object JamesAlgorithmRegistry {
         AlgorithmDefinition("low_mood_load","Low Mood",LOW_MOOD_VERSION,"1.0.0",AlgorithmStatus.LEARNING,
             "A non-diagnostic, slow-moving estimate of evidence that James's mood is low or flat. Direct James feedback is the ground truth; physiology and context are supporting evidence, not a diagnosis.",
             "wellbeing-inputs-v1","wellbeing-output-v1","2026-09-11",true,
-            listOf("Rut","Sleep","Recovery","HRV","Activity","Personal time","Optional check-ins"),
+            listOf("Life Balance","Sleep","Recovery","HRV","Activity","Personal time","Optional check-ins"),
             listOf(
                 AlgorithmChange(LOW_MOOD_VERSION,"2026-09-16","Evidence-first mood explanation",listOf("The v1.3.1 score calculation and historical outputs remain preserved.","The current estimate now makes missing direct mood evidence, prior contribution, calibration effect and confidence limitations explicit.","Life Balance direction is no longer presented as a Low Mood improvement claim; direct low/flat feedback uses an unambiguous higher-means-more-low/flat scale.")),
                 AlgorithmChange("1.3.1","2026-09-16","Corrected Life Balance trend arithmetic",listOf("A parenthesisation error made a stable 7-day and 14-day Life Balance score look like improvement. The correction changes only the descriptive Life Balance-derived trend label; Low-Mood Load score inputs, score, calibration and historical evidence are unchanged.")),
-                AlgorithmChange("1.2.0","2026-09-11","Corrected contribution direction",listOf("Fixed shared load-score sign handling for HRV and Recovery.","Sleep is shortfall based: longer sleep alone cannot worsen Low-Mood Load.","Physiological trend inputs now use a rolling window; one fresh reading cannot cause a large Low-Mood movement.","Rut movement toward neutral remains an improvement.")),
+                AlgorithmChange("1.2.0","2026-09-11","Corrected contribution direction",listOf("Fixed shared load-score sign handling for HRV and Recovery.","Sleep is shortfall based: longer sleep alone cannot worsen Low-Mood Load.","Physiological trend inputs now use a rolling window; one fresh reading cannot cause a large Low-Mood movement.","Life Balance movement toward neutral remains contextual evidence, not direct mood improvement.")),
                 AlgorithmChange("1.0.0","2026-09-11","Initial personal baseline",listOf("One bad day and healthy rest are deliberately not treated as a trend."))
             ),
             calibrationCompatibleAlgorithmVersions=setOf("1.3.0","1.3.1",LOW_MOOD_VERSION)
