@@ -32,6 +32,8 @@ jobs:
         run: |
           [[ "$VERSION_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           [[ "$VERSION_CODE" =~ ^[0-9]+$ ]]
+          patch="${VERSION_NAME##*.}"
+          test "$VERSION_CODE" = "$patch"
       - name: Materialize protected Samsung Health Sensor SDK
         env:
           SAMSUNG_HEALTH_SENSOR_AAR_BASE64_PART_1: '${{ secrets.SAMSUNG_HEALTH_SENSOR_AAR_BASE64_PART_1 }}'

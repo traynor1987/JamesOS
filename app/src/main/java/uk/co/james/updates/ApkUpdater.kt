@@ -52,18 +52,42 @@ class ApkUpdater(private val context: Context) {
             return c.inputStream.bufferedReader().use {reader->val out=StringBuilder();val buffer=CharArray(4096);while(true){val n=reader.read(buffer);if(n<0)break;out.append(buffer,0,n);require(out.length<=1024*1024){"Update metadata is too large."}};out.toString()}
         }finally{c.disconnect()}
     }
-    suspend fun check(): AppUpdate? = withContext(Dispatchers.IO) {
-        val repo=BuildConfig.UPDATE_REPOSITORY
-        require(repo.matches(Regex("[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+"))) { "The release repository is not configured in this build." }
+    private fun latestPublicReleaseTag(repo:String):String {
+        val url="https://github.com/${UpdatePolicy.repository(repo)}/releases/latest"
+        val c=(URL(url).openConnection() as HttpURLConnection).apply {
+            instanceFollowRedirects=false;connectTimeout=15000;readTimeout=20000
+            setRequestProperty("User-Agent","James-Android")
+        }
+        try {
+            require(c.responseCode in listOf(301,302,303,307,308)){"GitHub could not provide the latest public release."}
+            return UpdatePolicy.releaseTag(repo,c.getHeaderField("Location")?:"")?:error("GitHub returned an invalid public release redirect.")
+        } finally {c.disconnect()}
+    }
+    private fun update(version:Long,name:String,asset:(String)->String):AppUpdate? {
+        if(version<=BuildConfig.VERSION_CODE)return null
+        val checksum=text(asset("james.apk.sha256"),true).trim().split(Regex("\\s+")).first()
+        require(checksum.matches(Regex("[0-9a-fA-F]{64}")))
+        return AppUpdate(version,name,asset("james.apk"),checksum.lowercase())
+    }
+    private fun apiUpdate(repo:String):AppUpdate? {
         val release=json.parseToJsonElement(text("https://api.github.com/repos/$repo/releases/latest")).jsonObject
         fun asset(name:String):String {
             val row=release.array("assets").map {it.jsonObject}.firstOrNull {it.text("name")==name}?:error("Release is missing $name")
             return UpdatePolicy.asset(repo,row["id"]?.jsonPrimitive?.longOrNull?:error("Invalid release asset ID."))
         }
         val meta=json.parseToJsonElement(text(asset("james-version.json"),true)).jsonObject
-        val version=meta.number("versionCode").toLong();if(version<=BuildConfig.VERSION_CODE)return@withContext null
-        val checksum=text(asset("james.apk.sha256"),true).trim().split(Regex("\\s+")).first();require(checksum.matches(Regex("[0-9a-fA-F]{64}")))
-        AppUpdate(version,meta.text("versionName"),asset("james.apk"),checksum.lowercase())
+        return update(meta.number("versionCode").toLong(),meta.text("versionName"),::asset)
+    }
+    private fun publicReleaseUpdate(repo:String):AppUpdate? {
+        val tag=latestPublicReleaseTag(repo)
+        fun asset(name:String)=UpdatePolicy.publicAsset(repo,tag,name)
+        val meta=json.parseToJsonElement(text(asset("james-version.json"),true)).jsonObject
+        return update(meta.number("versionCode").toLong(),meta.text("versionName"),::asset)
+    }
+    suspend fun check(): AppUpdate? = withContext(Dispatchers.IO) {
+        val repo=BuildConfig.UPDATE_REPOSITORY
+        require(repo.matches(Regex("[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+"))) { "The release repository is not configured in this build." }
+        runCatching {apiUpdate(repo)}.getOrElse {apiFailure->runCatching {publicReleaseUpdate(repo)}.getOrElse {throw apiFailure}}
     }
     suspend fun download(update: AppUpdate,onProgress: (Int)->Unit): File = withContext(Dispatchers.IO) {
         val dir=File(context.cacheDir,"updates").apply {mkdirs()};val part=File(dir,"james.part");val target=File(dir,"james.apk");val c=connection(update.apk,true)

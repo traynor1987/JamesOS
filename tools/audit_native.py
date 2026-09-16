@@ -24,6 +24,8 @@ for forbidden in [':wear:testDebugUnitTest', ':wear:assembleRelease']:
     assert forbidden not in validation, forbidden
 for required in ['james-wear.apk.sha256','gh release create','environment: james-release']:
     assert required in release, required
+for required in ['patch="${VERSION_NAME##*.}"', 'test "$VERSION_CODE" = "$patch"']:
+    assert required in release, required
 assert 'gh release create' not in validation
 try:
     from tree_sitter import Language, Parser

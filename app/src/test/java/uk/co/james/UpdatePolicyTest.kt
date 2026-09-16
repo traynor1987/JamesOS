@@ -4,6 +4,12 @@ import org.junit.Assert.*
 import uk.co.james.updates.UpdatePolicy
 
 class UpdatePolicyTest {
+    @Test fun latestReleaseRedirectAcceptsOnlyThisRepositoryTag() {
+        val repo="traynor1987/JamesOS"
+        assertEquals("v0.3.225",UpdatePolicy.releaseTag(repo,"/traynor1987/JamesOS/releases/tag/v0.3.225"))
+        assertNull(UpdatePolicy.releaseTag(repo,"/traynor1987/Other/releases/tag/v0.3.225"))
+        assertNull(UpdatePolicy.releaseTag(repo,"/traynor1987/JamesOS/releases/tag/not-a-version"))
+    }
     private val repo="traynor1987/JamesOS"
     @Test fun authorizesOnlySelectedRepositoryApi() {
         assertTrue(UpdatePolicy.canAuthorize(UpdatePolicy.asset(repo,123),repo))
