@@ -8,6 +8,8 @@ import androidx.room.withTransaction
 import uk.co.james.core.changed
 import uk.co.james.core.fields
 import uk.co.james.core.personal
+import uk.co.james.core.text
+import uk.co.james.core.flag
 import uk.co.james.core.p
 import uk.co.james.data.JamesRepository
 import uk.co.james.database.StoredRecord

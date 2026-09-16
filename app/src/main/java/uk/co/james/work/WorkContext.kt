@@ -15,6 +15,7 @@ import uk.co.james.core.number
 import uk.co.james.core.p
 import uk.co.james.core.personal
 import uk.co.james.core.text
+import uk.co.james.core.validTime
 import uk.co.james.data.JamesRepository
 import uk.co.james.database.StoredRecord
 import uk.co.james.time.jamesDayWindow
