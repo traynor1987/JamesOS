@@ -14,6 +14,7 @@ import uk.co.james.location.LocationSource
 import uk.co.james.nutrition.NutritionHealthSource
 import uk.co.james.sync.BackgroundJobs
 import uk.co.james.work.WorkContextProvider
+import uk.co.james.schedule.CalendarScheduleSource
 import kotlinx.coroutines.*
 import uk.co.james.location.reconstructLegacyVisits
 import uk.co.james.diagnostics.LocalCrashDiagnostics
@@ -27,6 +28,7 @@ class JamesApplication : Application() {
     val location by lazy { LocationSource(this,repository,preferences) }
     val wear by lazy { uk.co.james.wear.WearCompanion(this) }
     val work by lazy { WorkContextProvider(this,repository) }
+    val calendar by lazy { CalendarScheduleSource(this,repository) }
     val crashDiagnostics by lazy { LocalCrashDiagnostics(this) }
     override fun onCreate() {super.onCreate();crashDiagnostics.install();BackgroundJobs.schedule(this);if(whoop.configured())BackgroundJobs.scheduleWhoop(this);CoroutineScope(SupervisorJob()+Dispatchers.IO).launch {
         runCatching {repository.reconstructLegacyVisits()}

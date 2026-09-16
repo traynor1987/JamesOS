@@ -127,9 +127,15 @@ private fun nutritionContext(records:List<StoredRecord>,window:JamesDayWindow,cl
 }
 
 private fun nextConstraint(records:List<StoredRecord>,clock:Instant):TimeConstraint? {
-    val candidates=records.filter {it.kind in setOf("WorkShift","TimeBlock","Event","PlannedEvent","Appointment")}.mapNotNull {row->
+    // Scheduled commitments are explicitly planned evidence.  They inform the
+    // next fixed constraint but never become actual Time Ownership by virtue
+    // of their start time.
+    val candidates=records.filter {it.kind in setOf("WorkShift","TimeBlock","Event","PlannedEvent","Appointment","ScheduledCommitment")}.mapNotNull {row->
         val data=row.data();val label=(data.text("category")+" "+data.text("title")+" "+row.kind).lowercase()
-        val explicit=data.flag("fixedConstraint")||listOf("work","shift","appointment","commitment","obligation").any(label::contains)
+        val scheduled=row.kind=="ScheduledCommitment"
+        if(scheduled&&data.text("status","UPCOMING") !in setOf("UPCOMING","IN_PROGRESS")) return@mapNotNull null
+        if(scheduled&&data.flag("allDay")) return@mapNotNull null
+        val explicit=data.flag("fixedConstraint")||scheduled||listOf("work","shift","appointment","commitment","obligation").any(label::contains)
         if(!explicit)return@mapNotNull null
         val starts=data.text("start",data.text("startsAt",row.timestamp)).takeIf(::validTime)?.let(Instant::parse)?:return@mapNotNull null
         if(starts<=clock||starts>clock.plus(Duration.ofHours(36)))return@mapNotNull null

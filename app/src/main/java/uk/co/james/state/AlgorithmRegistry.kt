@@ -41,7 +41,7 @@ object JamesAlgorithmRegistry {
     const val LIVE_ENERGY_VERSION="1.2.0"
     const val SUSTAINABILITY_VERSION="1.1.0"
     const val CRASH_RISK_VERSION="1.1.0"
-    const val TIME_PRESSURE_VERSION="1.0.0"
+    const val TIME_PRESSURE_VERSION="1.1.0"
     const val CONTEXT_LOAD_VERSION="1.0.0"
     const val LIFE_BALANCE_VERSION="1.0.1"
     const val LIFE_BALANCE_V2_VERSION="2.0.0"
@@ -189,7 +189,7 @@ object JamesAlgorithmRegistry {
             "Estimates pressure from usable personal time running out before the next known meaningful constraint. It is separate from Anxiety Load.",
             "time-pressure-inputs-v1","right-now-output-v1","2026-09-13",true,
             listOf("Next fixed constraint","Known preparation/travel buffer","Usable personal window","Time That Was Mine","Optional time-pressure check-in"),
-            listOf(AlgorithmChange(TIME_PRESSURE_VERSION,"2026-09-13","Initial James-specific time model",listOf("Uses the accepted-main-sleep James Day window.","Only known buffers reduce usable time; travel is never invented.","Does not feed Anxiety and leaves Mental Reserve semantics unchanged in this initial learning release.")))
+            listOf(AlgorithmChange(TIME_PRESSURE_VERSION,"2026-09-16","Scheduled commitments planned-evidence input",listOf("Timed fixed Calendar and Shift Tracker rota commitments can identify the next known constraint.","Plans never create actual ownership or Life Balance time.","Only explicit preparation buffers reduce usable time; travel is never invented.")),AlgorithmChange("1.0.0","2026-09-13","Initial James-specific time model",listOf("Uses the accepted-main-sleep James Day window.","Only known buffers reduce usable time; travel is never invented.","Does not feed Anxiety and leaves Mental Reserve semantics unchanged in this initial learning release.")))
         ),
         AlgorithmDefinition("context_load","Context Load",CONTEXT_LOAD_VERSION,"1.0.0",AlgorithmStatus.EXPERIMENTAL,
             "An acute, private estimate of how mentally demanding the currently recorded context may be. It is not a diagnosis and never treats a location as wellbeing.",

@@ -23,7 +23,7 @@ import java.time.Instant
 
 /** Contract constants are deliberately generic: James OS does not contain Domino's workflow. */
 object ShiftTrackerWorkContract {
-    const val VERSION = 1
+    const val VERSION = 2
     const val PERMISSION = "uk.co.james.permission.SHIFT_TRACKER_WORK_CONTEXT"
     const val ACTION_EVENT = "uk.co.james.action.SHIFT_TRACKER_WORK_EVENT"
     const val ACTION_RECONCILE = "uk.co.james.action.SHIFT_TRACKER_RECONCILE"
@@ -55,6 +55,23 @@ data class CanonicalWorkEvent(
     val externalTaskId: String? = null,
     val taskType: String? = null
 )
+
+/** A rota is an intention supplied by Shift Tracker, never proof that a shift
+ * occurred.  Its stable identity is deliberately separate from event IDs so
+ * later clock events can reconcile it without overwriting either record. */
+data class CanonicalRotaEntry(
+    val externalRotaId:String,
+    val externalShiftId:String,
+    val startsAt:Instant,
+    val endsAt:Instant,
+    val revision:Long,
+    val deleted:Boolean=false,
+    val preparationMinutes:Long=0
+) {
+    init { require(endsAt>startsAt); require(revision>=0); require(preparationMinutes in 0..240) }
+    val plannedOwnership:String get()="WORK"
+    val status:String get()=if(deleted)"CANCELLED" else "UPCOMING"
+}
 
 data class WorkSession(
     val externalShiftId: String,
@@ -90,7 +107,7 @@ object WorkPayload {
     fun parse(payload: String, clock: Instant = Instant.now()): CanonicalWorkEvent? {
         if (payload.toByteArray(Charsets.UTF_8).size > ShiftTrackerWorkContract.MAX_PAYLOAD_BYTES) return null
         val body = runCatching { json.parseToJsonElement(payload).jsonObject }.getOrNull() ?: return null
-        if (body.number("contractVersion", -1.0).toInt() != ShiftTrackerWorkContract.VERSION) return null
+        if (body.number("contractVersion", -1.0).toInt() !in setOf(1, ShiftTrackerWorkContract.VERSION)) return null
         val eventId = body.text("eventId").trim()
         val shiftId = body.text("shiftId").trim()
         val type = runCatching { WorkEventType.valueOf(body.text("eventType")) }.getOrNull() ?: return null
@@ -211,6 +228,51 @@ fun deriveCurrentWorkState(records: List<StoredRecord>, clock: Instant = Instant
 }
 
 class WorkContextProvider(private val context: Context, private val repository: JamesRepository) {
+    private suspend fun materializeActualWork(events:List<CanonicalWorkEvent>,receivedAt:Instant) {
+        events.groupBy {it.externalShiftId}.forEach { (shiftId,updates) ->
+            val start=updates.filter {it.eventType==WorkEventType.SHIFT_STARTED&&!it.deleted}.maxWithOrNull(compareBy<CanonicalWorkEvent>{it.revision}.thenBy{it.occurredAt})
+            val end=updates.filter {it.eventType==WorkEventType.SHIFT_ENDED&&!it.deleted}.maxWithOrNull(compareBy<CanonicalWorkEvent>{it.revision}.thenBy{it.occurredAt})
+            val recordId="shift-tracker-work:$shiftId"
+            val old=repository.dao.get("personalRecords",recordId)
+            val oldData=old?.data()
+            // A James-confirmed interval is stronger semantic evidence and is
+            // never overwritten by an arriving provider replay.
+            if(oldData?.text("ownershipSource")=="JAMES_CONFIRMED")return@forEach
+            val startAt=start?.occurredAt?:oldData?.text("start")?.takeIf(::validTime)?.let(Instant::parse)?:return@forEach
+            val startId=start?.externalEventId?:oldData?.text("sourceEventId").orEmpty()
+            val startRevision=start?.revision?:oldData?.number("providerRevision",0.0)?.toLong()?:0L
+            val actualEnd=end?.occurredAt?.takeIf {it>=startAt}
+            val raw=personal("OwnershipPeriod",fields(
+                "start" to p(startAt.toString()),"end" to p(actualEnd?.toString()?:oldData?.text("end").orEmpty()),
+                "ownership" to p("WORK"),"ownershipSource" to p("SHIFT_TRACKER_ACTUAL"),
+                "externalShiftId" to p(shiftId),"sourceEventId" to p(startId),
+                "endEventId" to (end?.externalEventId?.let(::p)?:oldData?.get("endEventId")?:JsonNull),"providerRevision" to p(maxOf(startRevision,end?.revision?:0)),
+                "provenance" to p("Actual Shift Tracker clock state."),"updatedAt" to p(receivedAt.toString())
+            ),recordId,"shift_tracker",startAt.toString()).changed("externalId" to p(shiftId),"updatedAt" to p(receivedAt.toString()))
+            repository.dao.put(StoredRecord.from("personalRecords",raw))
+        }
+    }
+    /** Stores only the planned rota projection.  Callers reconcile a later
+     * clock-in/out through [ingest]; this method never creates ownership. */
+    suspend fun ingestRota(entries:List<CanonicalRotaEntry>, receivedAt:Instant=Instant.now()):Int {
+        var accepted=0
+        repository.db.withTransaction {
+            entries.forEach { entry ->
+                val recordId="shift-tracker-rota:"+entry.externalRotaId
+                val old=repository.dao.get("personalRecords",recordId)
+                if(old!=null&&old.data().number("revision",-1.0).toLong()>=entry.revision)return@forEach
+                val raw=personal("ScheduledCommitment",fields(
+                    "externalCommitmentId" to p(entry.externalRotaId),"externalShiftId" to p(entry.externalShiftId),
+                    "title" to p("Work"),"start" to p(entry.startsAt.toString()),"end" to p(entry.endsAt.toString()),
+                    "plannedOwnership" to p(entry.plannedOwnership),"status" to p(entry.status),"fixedConstraint" to p(!entry.deleted),
+                    "preparationMinutes" to p(entry.preparationMinutes),"revision" to p(entry.revision),"receivedAt" to p(receivedAt.toString()),
+                    "reconciliationState" to p("UNKNOWN"),"contractVersion" to p(ShiftTrackerWorkContract.VERSION),"titleSource" to p("SHIFT_TRACKER_ROTA")
+                ),recordId,"shift_tracker",entry.startsAt.toString()).changed("externalId" to p(entry.externalRotaId),"updatedAt" to p(receivedAt.toString()))
+                repository.dao.put(StoredRecord.from("personalRecords",raw));accepted++
+            }
+        }
+        return accepted
+    }
     suspend fun ingest(events: List<CanonicalWorkEvent>, receivedAt: Instant = Instant.now(), cursor: String? = null): Int {
         require(events.size <= ShiftTrackerWorkContract.MAX_PAGE_SIZE)
         var accepted = 0
@@ -239,6 +301,7 @@ class WorkContextProvider(private val context: Context, private val repository: 
                 repository.dao.put(StoredRecord.from("personalRecords", raw))
                 accepted++
             }
+            materializeActualWork(events,receivedAt)
             val state = personal(
                 "WorkIntegrationState",
                 fields(

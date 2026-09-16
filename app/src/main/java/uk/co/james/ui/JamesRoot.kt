@@ -13,7 +13,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.filter
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable fun JamesRoot(vm: JamesViewModel,chooseImport:()->Unit,export:(String?)->Unit,requestHealth:(Set<String>)->Unit,requestLocation:()->Unit,requestActivity:()->Unit,openAppSettings:()->Unit,install:()->Unit) {
+@Composable fun JamesRoot(vm: JamesViewModel,chooseImport:()->Unit,export:(String?)->Unit,requestHealth:(Set<String>)->Unit,requestLocation:()->Unit,requestActivity:()->Unit,requestCalendar:()->Unit,openAppSettings:()->Unit,install:()->Unit) {
     val route by vm.route.collectAsStateWithLifecycle();val tab by vm.tab.collectAsStateWithLifecycle();val screen by vm.screenRecords.collectAsStateWithLifecycle();val requestKey by vm.screenRequestKey.collectAsStateWithLifecycle();val busy by vm.busy.collectAsStateWithLifecycle();val dialog by vm.dialog.collectAsStateWithLifecycle()
     val history by vm.historyReadiness.collectAsStateWithLifecycle()
     val screenReady=screen.loaded&&screen.matches(requestKey)
@@ -43,7 +43,7 @@ import kotlinx.coroutines.flow.filter
             "Settings:Diagnostics"->DiagnosticsSettingsScreen(vm)
             "Calibration Lab"->CalibrationLabScreen(vm)
             "Calibrate James OS"->CalibrationLabScreen(vm)
-            "Connections"->ConnectionsScreen(vm,requestHealth)
+            "Connections"->ConnectionsScreen(vm,requestHealth,requestCalendar)
             "Location"->LocationScreen(vm,data,requestLocation,requestActivity,openAppSettings)
             "Location map"->LocationMapScreen(vm,data)
             "Import Centre"->ImportScreen(vm,chooseImport,export)

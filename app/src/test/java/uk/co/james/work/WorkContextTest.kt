@@ -78,4 +78,21 @@ class WorkContextTest {
         assertEquals("Back at store", workEventTitle(WorkEventType.RETURNED_TO_STORE))
         assertEquals(WorkMode.OFF_WORK, modeAfter(WorkEventType.SHIFT_ENDED, WorkMode.DELIVERY))
     }
+
+    @Test fun rotaIsPlannedEvidenceAndNeverAnActualShift() {
+        val rota=CanonicalRotaEntry("rota-a","shift-a",Instant.parse("2026-09-15T17:00:00Z"),Instant.parse("2026-09-15T23:00:00Z"),1)
+        assertEquals("WORK",rota.plannedOwnership)
+        assertEquals("UPCOMING",rota.status)
+    }
+
+    @Test fun clockedShiftCreatesAndClosesOneActualWorkOwnership() = runBlocking {
+        provider.ingest(listOf(
+            event("start",WorkEventType.SHIFT_STARTED,"2026-09-14T17:56:00Z"),
+            event("end",WorkEventType.SHIFT_ENDED,"2026-09-14T23:14:00Z")
+        ),now)
+        val ownership=repository.stateInputs(now).single {it.recordId=="shift-tracker-work:shift-a"}
+        assertEquals("WORK",ownership.data().text("ownership"))
+        assertEquals("2026-09-14T17:56:00Z",ownership.data().text("start"))
+        assertEquals("2026-09-14T23:14:00Z",ownership.data().text("end"))
+    }
 }

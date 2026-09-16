@@ -51,6 +51,22 @@ class EnergyTimeEngineTest {
         assertEquals(90,result.nextConstraint!!.usableMinutes)
     }
 
+    @Test fun scheduledCommitmentCreatesUpcomingPressureWithoutActualOwnership() {
+        val scheduled=row("ScheduledCommitment",fields(
+            "title" to p("Work"),
+            "start" to p(clock.plus(Duration.ofMinutes(75)).toString()),
+            "end" to p(clock.plus(Duration.ofHours(6)).toString()),
+            "plannedOwnership" to p("WORK"),
+            "status" to p("UPCOMING"),
+            "fixedConstraint" to p(true),
+            "preparationMinutes" to p(15)
+        ),clock,"rota","shift_tracker")
+        val result=rightNowSummary(base()+scheduled,clock=clock,zone=ZoneOffset.UTC)
+        assertEquals("Work",result.nextConstraint!!.title)
+        assertEquals(60,result.nextConstraint!!.usableMinutes)
+        assertFalse((base()+scheduled).any {it.kind=="OwnershipPeriod"})
+    }
+
     @Test fun nutritionIsContextAndMissingNutritionIsNeutral() {
         val meal=row("Nutrition",fields("title" to p("Breakfast"),"energyKcal" to p(812),"proteinGrams" to p(32),"provider" to p("com.mynetdiary")),clock.minus(Duration.ofMinutes(30)),"meal","health_connect")
         val withMeal=rightNowSummary(base()+meal,clock=clock,zone=ZoneOffset.UTC)
