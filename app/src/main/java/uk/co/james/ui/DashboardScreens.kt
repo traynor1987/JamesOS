@@ -172,7 +172,7 @@ private fun NutritionTodayUi.hasData()=listOf(calories,protein,carbs,fat,waterMl
             if(settings.crashRisk)Triple("CRASH RISK",summary.crashRisk,when(summary.crashRisk.score){in 0..49->stateMint;in 50..74->jamesAmber;else->jamesRed})else null,
             if(settings.timePressure)Triple("TIME PRESSURE",summary.timePressure,when(summary.timePressure.score){in 0..39->stateMint;in 40..59->jamesBlue;else->jamesAmber})else null
         )
-        metrics.chunked(2).forEach {row->Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {row.forEach {(title,metric,colour)->RightNowTile(title,metric,colour,Modifier.weight(1f),if(metric.id=="sleepiness"){{vm.navigate("Algorithm:sleepiness")}}else null)};if(row.size==1)Spacer(Modifier.weight(1f))}}
+        metrics.chunked(2).forEach {row->Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {row.forEach {(title,metric,colour)->RightNowTile(title,metric,colour,Modifier.weight(1f),if(metric.id in setOf("sleepiness","time_pressure")){{vm.navigate("Algorithm:${metric.id}")}}else null)};if(row.size==1)Spacer(Modifier.weight(1f))}}
         summary.nextConstraint?.let {Muted("Next: ${it.title} · ${it.usableMinutes}m usable after ${it.preparationMinutes+it.travelMinutes}m known preparation/travel")}
             ?:Muted("No known upcoming constraint · Time Pressure confidence is limited")
         TextButton(onClick={details=!details},modifier=Modifier.fillMaxWidth()){Text(if(details)"HIDE DETAILS" else "WHY? / DETAILS")}
@@ -193,7 +193,8 @@ private fun NutritionTodayUi.hasData()=listOf(calories,protein,carbs,fat,waterMl
 
 @Composable private fun RightNowTile(title:String,metric:RightNowMetric,colour:Color,modifier:Modifier=Modifier,onClick:(()->Unit)?=null) {
     val interactive=if(onClick==null)modifier else modifier.clickable(onClick=onClick)
-    Surface(interactive,shape=RoundedCornerShape(18.dp),color=statePanel,contentColor=Color.White) {Column(Modifier.heightIn(min=112.dp).padding(13.dp),verticalArrangement=Arrangement.spacedBy(3.dp)) {Text(title,color=colour,style=MaterialTheme.typography.labelSmall,fontWeight=FontWeight.Bold);Text("${metric.score}",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Black);Text(metric.label,fontWeight=FontWeight.Bold,color=colour);Text("${metric.confidence} confidence",style=MaterialTheme.typography.labelSmall,color=stateQuiet)}}
+    val noKnownConstraint=metric.id=="time_pressure"&&metric.evidenceState=="NO_KNOWN_CONSTRAINT"
+    Surface(interactive,shape=RoundedCornerShape(18.dp),color=statePanel,contentColor=Color.White) {Column(Modifier.heightIn(min=112.dp).padding(13.dp),verticalArrangement=Arrangement.spacedBy(3.dp)) {Text(title,color=colour,style=MaterialTheme.typography.labelSmall,fontWeight=FontWeight.Bold);if(noKnownConstraint)Text("—",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Black)else Text("${metric.score}",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Black);Text(if(noKnownConstraint)"NO KNOWN PRESSURE" else metric.label,fontWeight=FontWeight.Bold,color=colour);Text(if(noKnownConstraint)"LIMITED EVIDENCE" else "${metric.confidence} confidence",style=MaterialTheme.typography.labelSmall,color=stateQuiet)}}
 }
 
 @Composable private fun RightNowWhy(title:String,metric:RightNowMetric) {
@@ -216,7 +217,7 @@ private fun NutritionTodayUi.hasData()=listOf(calories,protein,carbs,fat,waterMl
         }
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
             TodayWellbeingStat("ANXIETY NOW",summary.anxiety.score,summary.anxiety.label,wellbeingLoadColour(summary.anxiety.score),Modifier.weight(1f))
-            TodayWellbeingStat("LOW-MOOD TREND",summary.lowMood.score,summary.lowMood.label,wellbeingLoadColour(summary.lowMood.score),Modifier.weight(1f))
+            TodayWellbeingStat("LOW MOOD",summary.lowMood.score,summary.lowMood.label,wellbeingLoadColour(summary.lowMood.score),Modifier.weight(1f))
         }
         TextButton(onClick=onOpen,modifier=Modifier.fillMaxWidth()) {Text("OPEN MENTAL WELLBEING  →")}
     }
@@ -424,7 +425,7 @@ private fun stressLevel(score:Double)=when {score<20->"Very low";score<40->"Low"
         Text("LIVE WELLBEING VIEW",color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.labelSmall,fontWeight=FontWeight.Bold)
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
             WellbeingMetric("ANXIETY LOAD",summary.anxiety.score,summary.anxiety.label,wellbeingLoadColour(summary.anxiety.score),Modifier.weight(1f))
-            WellbeingMetric("LOW-MOOD LOAD",summary.lowMood.score,summary.lowMood.label,wellbeingLoadColour(summary.lowMood.score),Modifier.weight(1f),summary.lowMood.trend)
+            WellbeingMetric("LOW MOOD",summary.lowMood.score,summary.lowMood.label,wellbeingLoadColour(summary.lowMood.score),Modifier.weight(1f),summary.lowMood.trend)
         }
         Muted("Confidence: ${summary.reserve.confidence} · ${summary.days} days learning · ${summary.usableHrv} HRV · ${summary.sleepDays} sleep days.")
         summary.anxietyDiagnostics?.let {diagnostic->
@@ -448,6 +449,7 @@ private fun stressLevel(score:Double)=when {score<20->"Very low";score<40->"Low"
         WellbeingContributionBreakdown("MENTAL RESERVE",summary.reserve.contributors)
         WellbeingContributionBreakdown("ANXIETY LOAD",summary.anxiety.contributors)
         WellbeingContributionBreakdown("LOW-MOOD LOAD",summary.lowMood.contributors)
+        TextButton(onClick={vm.navigate("Algorithm:low_mood_load")},modifier=Modifier.fillMaxWidth()) {Text("OPEN LOW MOOD DETAILS")}
         if(checkInsEnabled) {
             Divider()
             Text("HOW ARE YOU FEELING?",style=MaterialTheme.typography.labelLarge,fontWeight=FontWeight.Bold)

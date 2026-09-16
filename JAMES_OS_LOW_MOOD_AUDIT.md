@@ -155,3 +155,17 @@ Time Pressure does **not** consume the authoritative `OwnershipPeriod` ledger. I
 5. Separately improve Time Pressure evidence-state presentation: when there is no upcoming constraint or fresh check-in, present **limited / no known constraint**, not a confident-looking zero. Keep Time Ownership separate from Time Pressure unless a future product contract explicitly connects them.
 
 No WHOOP Part 3 work, coefficient change, threshold change, diagnosis, or new wellbeing model is included in this audit.
+
+## Remediation status — 2026-09-16
+
+Implemented on the versioned **Low Mood v2.0.0 presentation contract** without changing the v1.3.1 coefficient calculation. Historical v1.3/v1.3.1 outputs and calibration observations remain retained; new current metadata carries its Low Mood algorithm version rather than overwriting the earlier output key.
+
+* Low Mood is now presented as a non-diagnostic estimate of evidence that mood is **low or flat**, not as proof of happiness when the number is low.
+* Detail view exposes the persisted score contributors, base/prior (30), calibration effect, input coverage, direct mood-evidence state and missing categories. It explicitly says that missing direct evidence is not positive mood evidence.
+* The Life Balance-derived direction is no longer displayed as a Low Mood improvement claim. Until direct longitudinal mood trend evidence exists, the presentation is `INSUFFICIENT TREND EVIDENCE`.
+* The weekly calibration question now asks **how low or flat the past week felt**. `0 = not low or flat`; `100 = extremely low or flat`; higher always means more low/flat mood. Legacy v1 wording still normalises with its historical reversed mapping.
+* The calibration snapshot retains only structured contributor categories/effects and evidence state—never journal prose, provider payloads or location coordinates.
+* Evidence hierarchy for future v2 research: direct clearly-worded James observations are strongest; repeated longitudinal observations are strong; sleep, Recovery, HRV, Life Balance, activity and chosen context are supporting; passive behaviour/place diversity is weak explanatory context; missed self-care, staying home, passive media, and low Stress/Anxiety/Time Pressure are not Low Mood evidence by themselves.
+* Motivation, enjoyment, interest, inspiration and engagement remain an explicit research question—not a newly invented score or passive diagnosis.
+
+Time Pressure now persists and presents an evidence state: `DIRECT`, `INFERRED`, or `NO_KNOWN_CONSTRAINT`. With no known fixed constraint and no fresh direct check-in, compact Today says **NO KNOWN PRESSURE · LIMITED EVIDENCE** rather than displaying the base 5 (or a calibration-adjusted 0) as a measured absence. A fresh direct `NOT AT ALL` may still show zero with its provenance. Time Ownership remains separate: constrained and unknown ownership are neither automatically Time Pressure nor automatically Personal Time.

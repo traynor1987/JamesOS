@@ -87,6 +87,16 @@ class StateEngineTest {
         assertTrue(stored.all {it.jsonObject.text("targetScore")=="LOW_MOOD_LOAD"})
     }
 
+    @Test fun lowMoodDoesNotClaimMoodTrendFromLifeBalanceAndExplainsMissingDirectEvidence() {
+        val summary=mentalWellbeing(emptyList(),clock=clock,zone=zone)
+        val evidence=lowMoodEvidence(emptyList(),summary.lowMood,clock)
+        assertEquals("INSUFFICIENT TREND EVIDENCE",summary.lowMood.trend)
+        assertEquals(30,evidence.baseScore)
+        assertEquals("Not recently observed",evidence.directEvidence)
+        assertTrue(evidence.missingEvidence.contains("Direct low/flat mood evidence"))
+        assertEquals(JamesAlgorithmRegistry.LOW_MOOD_VERSION,wellbeingRecord(summary).obj("value").text("lowMoodAlgorithmVersion"))
+    }
+
     @Test fun identicalPersistedEvidenceProducesIdenticalWellbeingAfterProcessRecreation() {
         val rows=(1L..8L).flatMap {day->
             val at=clock.minus(Duration.ofDays(day))

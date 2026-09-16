@@ -113,6 +113,36 @@ data class WellbeingContribution(
 data class WellbeingOutput(val score:Int,val label:String,val trend:String,val confidence:String,val contributors:List<WellbeingContribution>)
 data class MentalWellbeingSummary(val date:String,val anxiety:WellbeingOutput,val lowMood:WellbeingOutput,val reserve:WellbeingOutput,val days:Int,val usableHrv:Int,val sleepDays:Int,val moodCheckIns:Int,val activityDays:Int,val calculatedAt:String="",val anxietyInputs:List<AnxietyInputStamp> = emptyList(),val anxietyDiagnostics:AnxietyCalculationDiagnostics? = null,val calibrationVersions:Map<String,String> = emptyMap(),val calibrationSetIds:Map<String,String> = emptyMap())
 
+/** Presentation provenance for the subjective construct.  It deliberately does not alter v1 scoring. */
+data class LowMoodEvidenceSummary(
+    val moodConfidence:String,
+    val directEvidence:String,
+    val inputCoverage:String,
+    val baseScore:Int,
+    val preCalibrationScore:Int,
+    val calibrationEffect:Int,
+    val missingEvidence:List<String>
+)
+
+fun lowMoodEvidence(records:List<StoredRecord>,output:WellbeingOutput,clock:Instant=Instant.now()):LowMoodEvidenceSummary {
+    val direct=records.filter {row->row.kind=="CalibrationEvent"&&row.data().text("algorithmId")=="low_mood_load"&&!row.data().flag("ignored")}
+        .maxByOrNull {it.timestamp}
+    val directAt=direct?.timestamp?.let {runCatching {Instant.parse(it)}.getOrNull()}
+    val recentDirect=directAt?.let {Duration.between(it,clock).toDays()<=14}==true
+    val directEvidence=when {recentDirect->"Recent direct low/flat calibration observation";direct!=null->"Direct low/flat observation is stale";else->"Not recently observed"}
+    val moodConfidence=when {recentDirect->"DIRECT";direct!=null->"LIMITED";else->"LIMITED"}
+    val preCalibration=(30+output.contributors.sumOf {it.contribution}).roundToInt().coerceIn(0,100)
+    val missing=buildList {
+        if(!recentDirect)add("Direct low/flat mood evidence")
+        if(output.contributors.none {it.source=="Sleep"})add("Recent sleep context")
+        if(output.contributors.none {it.source=="Recovery"})add("Recovery context")
+        if(output.contributors.none {it.source=="HRV"})add("HRV context")
+        if(output.contributors.none {it.source=="Life Balance"})add("Life Balance context")
+        if(output.contributors.none {it.source=="Exercise"})add("Activity context")
+    }
+    return LowMoodEvidenceSummary(moodConfidence,directEvidence,output.confidence,30,preCalibration,output.score-preCalibration,missing)
+}
+
 /** Exercise suppresses fast Anxiety physiology only around that exact reading. */
 internal fun contemporaneousAnxietyActivity(health:List<StoredRecord>,readingAt:Instant):Boolean {
     val exercise=health.filter {it.data().text("metric")=="Exercise"}.any {row->runCatching {
@@ -349,7 +379,8 @@ fun mentalWellbeing(records:List<StoredRecord>,settings:WellbeingSettings=Wellbe
     return MentalWellbeingSummary(
         today.toString(),
         WellbeingOutput(anxietyFinal,wellbeingLabel(anxietyFinal),if(anxietyFinal<40)"LOW LOAD" else "ELEVATED",conf,forTarget("ANXIETY_LOAD",anxiety)),
-        WellbeingOutput(lowFinal,wellbeingLabel(lowFinal),trend(rutDirection),conf,forTarget("LOW_MOOD_LOAD",low)),
+        // Life Balance direction is contextual evidence, not proof that mood improved.
+        WellbeingOutput(lowFinal,wellbeingLabel(lowFinal),"INSUFFICIENT TREND EVIDENCE",conf,forTarget("LOW_MOOD_LOAD",low)),
         WellbeingOutput(reserveFinal,reserveLabel(reserveFinal),trend(rutDirection),conf,forTarget("MENTAL_RESERVE",reserveContrib)),
         days,recent("HRV",90).size,recent("Sleep",90).map {it.first}.distinct().size,moodChecks,exerciseDays,
         calculatedAt=clock.toString(),anxietyInputs=anxietyInputs,anxietyDiagnostics=storedAnxietyDiagnostics(),calibrationVersions=mapOf("anxiety_load" to anxietyCal.version,"low_mood_load" to lowCal.version,"mental_reserve" to reserveCal.version),calibrationSetIds=mapOf("anxiety_load" to anxietyCal.setId,"low_mood_load" to lowCal.setId,"mental_reserve" to reserveCal.setId)
@@ -366,5 +397,5 @@ fun anxietyDiagnosticsRecord(summary:MentalWellbeingSummary,previousScore:Int?):
         "inputFingerprint" to p(summary.anxietyInputs.joinToString("|") {"${it.source}@${it.timestamp}"}),"inputs" to JsonArray(summary.anxietyInputs.map {fields("source" to p(it.source),"timestamp" to p(it.timestamp))})
     ))
 }
-fun wellbeingRecord(summary:MentalWellbeingSummary)=fields("key" to p("mental-wellbeing:${summary.date}:$WELLBEING_ALGORITHM_VERSION"),"value" to fields("algorithmVersion" to p(WELLBEING_ALGORITHM_VERSION),"date" to p(summary.date),"anxietyAlgorithmVersion" to p(ANXIETY_ALGORITHM_VERSION),"anxietyCalibrationVersion" to p(summary.calibrationVersions["anxiety_load"]?:ANXIETY_CALIBRATION_VERSION),"anxietyCalibrationSetId" to p(summary.calibrationSetIds["anxiety_load"]?:"default:anxiety_load"),"mentalReserveCalibrationVersion" to p(summary.calibrationVersions["mental_reserve"]?:"1.0.0"),"mentalReserveCalibrationSetId" to p(summary.calibrationSetIds["mental_reserve"]?:"default:mental_reserve"),"lowMoodCalibrationVersion" to p(summary.calibrationVersions["low_mood_load"]?:"1.0.0"),"lowMoodCalibrationSetId" to p(summary.calibrationSetIds["low_mood_load"]?:"default:low_mood_load"),"anxiety" to wellbeingJson(summary.anxiety),"lowMood" to wellbeingJson(summary.lowMood),"reserve" to wellbeingJson(summary.reserve),"days" to p(summary.days),"usableHrv" to p(summary.usableHrv),"sleepDays" to p(summary.sleepDays),"moodCheckIns" to p(summary.moodCheckIns),"activityDays" to p(summary.activityDays)))
+fun wellbeingRecord(summary:MentalWellbeingSummary)=fields("key" to p("mental-wellbeing:${summary.date}:$WELLBEING_ALGORITHM_VERSION:low-mood-${JamesAlgorithmRegistry.LOW_MOOD_VERSION}"),"value" to fields("algorithmVersion" to p(WELLBEING_ALGORITHM_VERSION),"lowMoodAlgorithmVersion" to p(JamesAlgorithmRegistry.LOW_MOOD_VERSION),"date" to p(summary.date),"anxietyAlgorithmVersion" to p(ANXIETY_ALGORITHM_VERSION),"anxietyCalibrationVersion" to p(summary.calibrationVersions["anxiety_load"]?:ANXIETY_CALIBRATION_VERSION),"anxietyCalibrationSetId" to p(summary.calibrationSetIds["anxiety_load"]?:"default:anxiety_load"),"mentalReserveCalibrationVersion" to p(summary.calibrationVersions["mental_reserve"]?:"1.0.0"),"mentalReserveCalibrationSetId" to p(summary.calibrationSetIds["mental_reserve"]?:"default:mental_reserve"),"lowMoodCalibrationVersion" to p(summary.calibrationVersions["low_mood_load"]?:"1.0.0"),"lowMoodCalibrationSetId" to p(summary.calibrationSetIds["low_mood_load"]?:"default:low_mood_load"),"anxiety" to wellbeingJson(summary.anxiety),"lowMood" to wellbeingJson(summary.lowMood),"reserve" to wellbeingJson(summary.reserve),"days" to p(summary.days),"usableHrv" to p(summary.usableHrv),"sleepDays" to p(summary.sleepDays),"moodCheckIns" to p(summary.moodCheckIns),"activityDays" to p(summary.activityDays)))
 private fun wellbeingJson(output:WellbeingOutput)=fields("score" to p(output.score),"label" to p(output.label),"trend" to p(output.trend),"confidence" to p(output.confidence),"contributors" to JsonArray(output.contributors.map {c->fields("source" to p(c.source),"current" to (c.current?.let(::p)?:JsonNull),"baseline" to (c.baseline?.let(::p)?:JsonNull),"direction" to p(c.direction),"weight" to p(c.weight),"confidence" to p(c.confidence),"contribution" to p(c.contribution),"explanation" to p(c.explanation),"targetScore" to p(c.targetScore),"normalizedValue" to (c.normalizedValue?.let(::p)?:JsonNull),"measurementSource" to p(c.measurementSource),"measurementContext" to p(c.measurementContext),"preCapContribution" to (c.preCapContribution?.let(::p)?:JsonNull),"postCapContribution" to (c.postCapContribution?.let(::p)?:JsonNull),"observedAt" to (c.observedAt?.let(::p)?:JsonNull),"ageMinutes" to (c.ageMinutes?.let(::p)?:JsonNull),"freshnessClass" to p(c.freshnessClass),"freshnessState" to p(c.freshnessState),"freshnessMultiplier" to p(c.freshnessMultiplier),"included" to p(c.included),"exclusionReason" to p(c.exclusionReason))}))

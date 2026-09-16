@@ -80,8 +80,11 @@ internal fun prepareCompactToday(
     val mental=buildList {
         add(CompactMetricUi("james_stress","STRESS",stress,loadLabel(stress)))
         add(CompactMetricUi("anxiety_load","ANXIETY",wellbeing.anxiety.score.takeIf {wellbeingEvidence},if(wellbeingEvidence)wellbeing.anxiety.label else "LEARNING",wellbeing.anxiety.trend.takeIf {wellbeingEvidence}))
-        add(CompactMetricUi("low_mood_load","LOW-MOOD",wellbeing.lowMood.score.takeIf {wellbeingEvidence},if(wellbeingEvidence)wellbeing.lowMood.label else "LEARNING",wellbeing.lowMood.trend.takeIf {wellbeingEvidence}))
-        if(settings.timePressure)add(CompactMetricUi("time_pressure","TIME PRESSURE",right.timePressure.score.takeIf {currentEvidence},if(currentEvidence)right.timePressure.label else "LEARNING"))
+        add(CompactMetricUi("low_mood_load","LOW MOOD",wellbeing.lowMood.score.takeIf {wellbeingEvidence},if(wellbeingEvidence)wellbeing.lowMood.label else "LEARNING",wellbeing.lowMood.trend.takeIf {wellbeingEvidence}))
+        if(settings.timePressure) {
+            val noKnownConstraint=right.timePressure.evidenceState=="NO_KNOWN_CONSTRAINT"
+            add(CompactMetricUi("time_pressure","TIME PRESSURE",right.timePressure.score.takeIf {currentEvidence&&!noKnownConstraint},when {noKnownConstraint->"NO KNOWN PRESSURE";currentEvidence->right.timePressure.label;else->"LEARNING"},if(noKnownConstraint)"LIMITED EVIDENCE" else null))
+        }
     }
     val summary=compactCurrentSummary(right.liveEnergy.score,right.sleepiness.score,health.battery.value,wellbeing.reserve.score)
     val candidates=compactPromotions(right.crashRisk.score,right.crashRisk.label,right.timePressure.score,right.timePressure.label,right.nextConstraint?.usableMinutes,right.nextConstraint?.title,context.difficultActive,context.difficultMinutes,settings)
@@ -191,7 +194,7 @@ private fun compactDuration(minutes:Long)=if(minutes<60)"${minutes}m" else "${mi
     if(sleepDetailOpen)ready.healthOverview.sleepDetail?.let {SleepDetailDialog(it,onDismiss={sleepDetailOpen=false})}
 }
 
-private fun openMetric(vm:JamesViewModel,id:String)=when(id){"mental_reserve","anxiety_load","low_mood_load"->vm.navigate("Insights",true);else->vm.navigate("Algorithm:$id")}
+private fun openMetric(vm:JamesViewModel,id:String)=when(id){"mental_reserve","anxiety_load"->vm.navigate("Insights",true);else->vm.navigate("Algorithm:$id")}
 
 @Composable private fun CompactSection(title:String,content:@Composable ColumnScope.()->Unit)=Box(Modifier.fillMaxWidth(),contentAlignment=Alignment.Center){Column(Modifier.widthIn(max=840.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){CompactHeading(title);content()}}
 @Composable private fun CompactHeading(title:String)=Text(title,style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Black,color=MaterialTheme.colorScheme.primary)

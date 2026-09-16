@@ -98,9 +98,10 @@ object JamesCalibrationEngine {
             else->null
         }
         val sleepinessOrdinal=if(algorithmId=="sleepiness")when(upper) {"NONE"->0.0;"SLIGHTLY SLEEPY"->25.0;"SLEEPY"->50.0;"VERY SLEEPY"->75.0;"STRUGGLING TO STAY AWAKE"->95.0;else->null}else null
-        val raw=comparison?:sleepinessOrdinal?:ordinal(upper)?:return null
+        val lowMoodDirect=if(algorithmId=="low_mood_load")when(upper) {"NOT LOW OR FLAT"->0.0;"A LITTLE LOW OR FLAT"->25.0;"NOTICEABLY LOW OR FLAT"->50.0;"VERY LOW OR FLAT"->75.0;"EXTREMELY LOW OR FLAT"->100.0;else->null}else null
+        val raw=comparison?:sleepinessOrdinal?:lowMoodDirect?:ordinal(upper)?:return null
         val reversed=algorithmId=="low_mood_load"&&upper in setOf("VERY LOW","LOW","OKAY","GOOD","VERY GOOD","GREAT")
-        return (sleepinessOrdinal?:if(reversed)100.0-raw else raw).coerceIn(0.0,100.0)
+        return (sleepinessOrdinal?:lowMoodDirect?:if(reversed)100.0-raw else raw).coerceIn(0.0,100.0)
     }
     fun event(algorithmId:String,prediction:Double,feedback:String,algorithmVersion:String,calibrationVersion:String,jamesDayId:String?,snapshot:JsonObject,note:String="",evidenceSource:String="DIRECT",sourceEventId:String?=null,timestamp:Instant=Instant.now(),calibrationSetId:String="",evidenceConfidence:String=if(evidenceSource=="DIRECT")"HIGH" else "MODERATE",recordId:String?=null):JsonObject {
         require(JamesCalibrationCatalog.get(algorithmId)?.supportsCalibration==true){"This algorithm does not support calibration."}

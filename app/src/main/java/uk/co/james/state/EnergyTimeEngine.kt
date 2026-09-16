@@ -32,7 +32,9 @@ data class RightNowMetric(
     val baseScore:Int=score,
     val algorithmVersion:String="1.0.0",
     val calibrationVersion:String="1.0.0",
-    val calibrationSetId:String=""
+    val calibrationSetId:String="",
+    /** Whether this number is direct, inferred, or simply no known constraint. */
+    val evidenceState:String="INFERRED"
 )
 
 data class NutritionContext(
@@ -213,7 +215,8 @@ fun rightNowSummary(records:List<StoredRecord>,settings:EnergyTimeSettings=Energ
         pressureEvidence+=ContextEvidence("Time-pressure check-in",self,"Your report is bounded calibration evidence, not an override.",pressureCheck.timestamp,pressureCheck.source)
     }
     val pressureScore=pressure.roundToInt().coerceIn(0,100)
-    val timePressure=RightNowMetric("time_pressure",pressureScore,pressureLabel(pressureScore),if(constraint==null&&self==null)"LIMITED" else confidence(pressureEvidence.size,self!=null),clock.toString(),pressureEvidence)
+    val pressureEvidenceState=when {self!=null->"DIRECT";constraint!=null->"INFERRED";else->"NO_KNOWN_CONSTRAINT"}
+    val timePressure=RightNowMetric("time_pressure",pressureScore,pressureLabel(pressureScore),if(pressureEvidenceState=="NO_KNOWN_CONSTRAINT")"LIMITED" else confidence(pressureEvidence.size,self!=null),clock.toString(),pressureEvidence,evidenceState=pressureEvidenceState)
     fun calibrated(metric:RightNowMetric,version:String,label:(Int)->String):RightNowMetric {
         val active=uk.co.james.calibration.JamesCalibrationEngine.activeCalibration(records,metric.id,"1.0.0",version)
         val final=uk.co.james.calibration.JamesCalibrationEngine.applyActiveScore(metric.score,records,metric.id)
@@ -236,4 +239,4 @@ fun rightNowRecord(summary:RightNowSummary,previous:RightNowSummary?=null)=field
     )
 )
 
-private fun metricJson(metric:RightNowMetric)=fields("score" to p(metric.score),"baseScore" to p(metric.baseScore),"label" to p(metric.label),"confidence" to p(metric.confidence),"algorithmVersion" to p(metric.algorithmVersion),"calibrationVersion" to p(metric.calibrationVersion),"calibrationSetId" to p(metric.calibrationSetId),"contributors" to JsonArray(metric.contributors.map {fields("name" to p(it.name),"contribution" to p(it.contribution),"explanation" to p(it.explanation),"observedAt" to (it.observedAt?.let(::p)?:kotlinx.serialization.json.JsonNull),"source" to p(it.source),"freshnessMultiplier" to p(it.freshnessMultiplier),"included" to p(it.included))}))
+private fun metricJson(metric:RightNowMetric)=fields("score" to p(metric.score),"baseScore" to p(metric.baseScore),"label" to p(metric.label),"confidence" to p(metric.confidence),"evidenceState" to p(metric.evidenceState),"algorithmVersion" to p(metric.algorithmVersion),"calibrationVersion" to p(metric.calibrationVersion),"calibrationSetId" to p(metric.calibrationSetId),"contributors" to JsonArray(metric.contributors.map {fields("name" to p(it.name),"contribution" to p(it.contribution),"explanation" to p(it.explanation),"observedAt" to (it.observedAt?.let(::p)?:kotlinx.serialization.json.JsonNull),"source" to p(it.source),"freshnessMultiplier" to p(it.freshnessMultiplier),"included" to p(it.included))}))

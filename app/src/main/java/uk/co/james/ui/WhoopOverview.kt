@@ -323,7 +323,7 @@ internal fun prepareWhoopOverview(records:List<StoredRecord>,clock:Instant):Whoo
         }
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             WellbeingMetricCard(
-                label="LOW-MOOD",value=summary.lowMood.score,status=summary.lowMood.label,
+                label="LOW MOOD",value=summary.lowMood.score,status=summary.lowMood.label,
                 detail="Lower is better · 0 few patterns → 100 elevated",colour=moodColour,
                 freshness="Longitudinal estimate",modifier=Modifier.weight(1f)
             )

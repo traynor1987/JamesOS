@@ -362,6 +362,12 @@ The Import Centre retains quarantined rows in a private `quarantinedRows` sideca
 
 ### Narrative and freshness continuation
 
+### Low Mood + Time Pressure remediation (2026-09-16)
+
+Low Mood **v2.0.0** changes explanation/calibration semantics only: v1.3.1 score coefficients and all historical outputs remain intact. The Low Mood detail route shows contributors, base/prior, calibration effect, direct-evidence state, input coverage and missing evidence; it does not call missing mood evidence happiness. The compact tile routes to this detail and no longer claims Life Balance-derived `IMPROVING`; current presentation is `INSUFFICIENT TREND EVIDENCE` until there is defensible direct longitudinal mood evidence. Weekly calibration is explicitly `how low or flat has the past week felt?`, with higher ratings meaning more low/flat mood; snapshots retain structured contributors/evidence only. No diagnosis, passive behaviour inference, calibration reset, or coefficient change was introduced.
+
+Time Pressure now distinguishes `DIRECT`, `INFERRED`, and `NO_KNOWN_CONSTRAINT` evidence states. Compact Today renders the latter as **NO KNOWN PRESSURE · LIMITED EVIDENCE**, not a precise zero; a fresh direct `NOT AT ALL` can still yield zero with provenance. Time Ownership is unchanged and remains separate: constrained/unknown time is not automatically Time Pressure or Personal Time.
+
 - Timeline is a bounded **James Day** presentation. A completed Visit now narrates linked `ContextPeriod`, `LifeFactActivity`, `OwnershipPeriod` and `VisitInterruption` evidence inside its visit card, while the stored records remain independently editable and exported. Do not delete raw semantic rows merely to keep Timeline quiet.
 - Provider connection and evidence freshness are distinct. Connections/Data status now explicitly says `NOT SYNCED`, `FRESH`, `AGING` or `STALE` for the latest successful Health Connect/WHOOP sync; a connected provider is not automatically current evidence. Metric-level physiology freshness remains the stronger algorithm input policy.
 ## Product audit remediation continuation (2026-09-15)

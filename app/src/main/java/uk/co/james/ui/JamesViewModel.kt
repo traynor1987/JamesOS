@@ -415,7 +415,7 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
         "time_pressure"->listOf("NOT AT ALL","A LITTLE","SOMEWHAT","A LOT","EXTREMELY")
         "context_load"->listOf("NOT AT ALL","A LITTLE","MODERATE","A LOT","EXTREME")
         "life_balance"->listOf("DEFINITELY NOT","MOSTLY NOT","MIXED","MOSTLY YES","DEFINITELY YES")
-        "low_mood_load"->listOf("VERY LOW","LOW","OKAY","GOOD","VERY GOOD")
+        "low_mood_load"->listOf("NOT LOW OR FLAT","A LITTLE LOW OR FLAT","NOTICEABLY LOW OR FLAT","VERY LOW OR FLAT","EXTREMELY LOW OR FLAT")
         else->listOf("TOO HIGH","ABOUT RIGHT","TOO LOW")
     }
     fun calibrate(algorithmId:String,target:CalibrationTarget,submissionId:String,feedback:String,note:String="",capacity:String?=null,sleepiness:String?=null)=action {
@@ -427,6 +427,16 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
         var snapshot=withContext(Dispatchers.Default){calibrationSnapshot(records.value,target.score,target.confidence,target.jamesDayId)}
         snapshot=snapshot.changed("comparisonFeedback" to p(feedback),"primaryTarget" to p(JamesCalibrationCatalog.get(algorithmId)?.feedbackDimension?:""),"capacity" to (capacity?.let(::p)?:JsonNull),"sleepiness" to (sleepiness?.let(::p)?:JsonNull),"evidenceConfidence" to p("DIRECT_HIGH"))
         if(algorithmId in setOf("low_mood_load","life_balance"))snapshot=snapshot.changed("feedbackWindowStart" to p(java.time.Instant.now().minus(java.time.Duration.ofDays(if(algorithmId=="life_balance")14 else 7)).toString()),"feedbackWindowEnd" to p(now()),"temporalAlignment" to p("LONGITUDINAL_RETROSPECTIVE"))
+        if(algorithmId=="low_mood_load") {
+            val current=wellbeing.value.lowMood
+            val evidence=uk.co.james.state.lowMoodEvidence(records.value,current)
+            snapshot=snapshot.changed(
+                "lowMoodMoodConfidence" to p(evidence.moodConfidence),
+                "lowMoodDirectEvidence" to p(evidence.directEvidence),
+                "lowMoodInputCoverage" to p(evidence.inputCoverage),
+                "lowMoodContributors" to kotlinx.serialization.json.JsonArray(current.contributors.map {item->fields("source" to p(item.source),"contribution" to p(item.contribution),"direction" to p(item.direction),"included" to p(item.included))})
+            )
+        }
         val raw=JamesCalibrationEngine.event(algorithmId,target.score.toDouble(),structured,target.algorithmVersion,target.calibrationVersion,target.jamesDayId,snapshot,note=note,calibrationSetId=target.calibrationSetId,recordId="calibration-event:"+submissionId)
         repo.saveCalibrationEvent(raw)
         val count=records.value.count {it.kind=="CalibrationEvent"&&it.data().text("algorithmId")==algorithmId}+1

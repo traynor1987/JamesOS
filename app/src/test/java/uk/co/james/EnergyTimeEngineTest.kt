@@ -69,4 +69,18 @@ class EnergyTimeEngineTest {
         assertEquals(beforeAnxiety,afterAnxiety)
         assertTrue(result.timePressure.contributors.first {it.name=="Time-pressure check-in"}.contribution<=20)
     }
+
+    @Test fun noKnownConstraintIsNotPresentedAsMeasuredZero() {
+        val result=rightNowSummary(base(),clock=clock,zone=ZoneOffset.UTC)
+        assertEquals(5,result.timePressure.score)
+        assertEquals("NO_KNOWN_CONSTRAINT",result.timePressure.evidenceState)
+        assertEquals("LIMITED",result.timePressure.confidence)
+    }
+
+    @Test fun freshDirectNoPressureCanRepresentZero() {
+        val report=row("TimePressureCheckIn",fields("pressure" to p("NOT AT ALL")),clock.minus(Duration.ofMinutes(1)),"pressure")
+        val result=rightNowSummary(base()+report,clock=clock,zone=ZoneOffset.UTC)
+        assertEquals(0,result.timePressure.score)
+        assertEquals("DIRECT",result.timePressure.evidenceState)
+    }
 }

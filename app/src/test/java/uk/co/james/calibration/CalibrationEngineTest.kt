@@ -54,6 +54,13 @@ class CalibrationEngineTest {
         assertEquals(75.0,JamesCalibrationEngine.normalizeObserved("anxiety_load","HIGH")!!,0.001)
         assertEquals(100.0,JamesCalibrationEngine.normalizeObserved("life_balance","DEFINITELY YES")!!,0.001)
     }
+    @Test fun directLowMoodScaleNeedsNoMentalReversal() {
+        assertEquals(0.0,JamesCalibrationEngine.normalizeObserved("low_mood_load","NOT LOW OR FLAT")!!,0.001)
+        assertEquals(50.0,JamesCalibrationEngine.normalizeObserved("low_mood_load","NOTICEABLY LOW OR FLAT")!!,0.001)
+        assertEquals(100.0,JamesCalibrationEngine.normalizeObserved("low_mood_load","EXTREMELY LOW OR FLAT")!!,0.001)
+        // Historical observations retain their original reversed v1 wording.
+        assertEquals(100.0,JamesCalibrationEngine.normalizeObserved("low_mood_load","VERY LOW")!!,0.001)
+    }
     @Test fun missingAndFutureEvidenceAreRejected() {
         assertThrows(IllegalArgumentException::class.java) {JamesCalibrationEngine.event("live_energy",50.0,"ABOUT RIGHT","1","1",null,snapshot(),timestamp=Instant.now().plusSeconds(600))}
         assertNull(JamesCalibrationEngine.parse(StoredRecord.from("personalRecords",personal("CalibrationEvent",fields("algorithmId" to p("live_energy"))))))

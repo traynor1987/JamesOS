@@ -65,6 +65,15 @@ class MigrationTest {
         val restored=BackupCodec.parse(BackupCodec.export(listOf(stored)).toString()).rows.single()
         assertEquals(stored.rawJson,restored.rawJson)
     }
+    @Test fun lowMoodCalibrationRoundTripPreservesRatingAndVersions() {
+        val raw=JamesCalibrationEngine.event("low_mood_load",27.0,"NOTICEABLY LOW OR FLAT",JamesAlgorithmRegistry.LOW_MOOD_VERSION,"1.0.0","james-day",fields("lowMoodMoodConfidence" to p("LIMITED"),"lowMoodContributors" to JsonArray(listOf(fields("source" to p("Sleep"),"contribution" to p(5))))),timestamp=Instant.parse(stamp),recordId="low-mood-event")
+        val restored=BackupCodec.parse(BackupCodec.export(listOf(StoredRecord.from("personalRecords",raw))).toString()).rows.single()
+        val event=JamesCalibrationEngine.parse(restored)!!
+        assertEquals(50.0,event.observed,.001)
+        assertEquals(JamesAlgorithmRegistry.LOW_MOOD_VERSION,event.algorithmVersion)
+        assertEquals("1.0.0",event.calibrationVersion)
+        assertEquals("LIMITED",event.snapshot.text("lowMoodMoodConfidence"))
+    }
     @Test fun ownership_context_activity_and_interruption_records_restore_without_special_backup_path() {
         val rows=listOf(
             StoredRecord.from("personalRecords",personal("OwnershipPeriod",fields("start" to p(stamp),"end" to p("2025-09-09T13:00:00Z"),"ownership" to p("AUTONOMOUS"),"ownershipSource" to p("JAMES_CONFIRMED"),"provenance" to p("James confirmed")),"ownership",timestamp=stamp)),

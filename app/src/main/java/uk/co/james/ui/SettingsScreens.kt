@@ -330,6 +330,8 @@ internal fun providerSyncStatus(stamp:String,now:Instant=Instant.now()):String {
     val stressCheck by vm.wearStressCheck.collectAsStateWithLifecycle()
     val battery=if(id=="body_battery") bodyBattery(records) else null
     val rightNow=if(id in setOf("live_energy","sleepiness","energy_sustainability","crash_risk","time_pressure"))rightNowSummary(records,energySettings)else null
+    val lowMood=if(id=="low_mood_load") mentalWellbeing(records).lowMood else null
+    val lowMoodEvidenceSummary=lowMood?.let {lowMoodEvidence(records,it)}
     val cards=mutableListOf<@Composable ()->Unit>()
     cards.add {PageTitle(entry.displayName,"JAMES OS ALGORITHM")}
     cards.add {JamesCard("Component status",entry.status.name) {
@@ -347,6 +349,21 @@ internal fun providerSyncStatus(stamp:String,now:Instant=Instant.now()):String {
         Muted("Current input confidence and historical calibration accuracy are separate.")
     }}
     cards.add {JamesCard("How it works"){Text(entry.description);Text("Inputs",style=MaterialTheme.typography.labelLarge);entry.inputs.forEach {Text("• $it")}}}
+    if(id=="low_mood_load"&&lowMood!=null&&lowMoodEvidenceSummary!=null) {
+        cards.add {JamesCard("Why this score","LOW MOOD · ${lowMood.score}/100") {
+            Text("${lowMood.label} · mood confidence ${lowMoodEvidenceSummary.moodConfidence}")
+            Text("Input coverage: ${lowMoodEvidenceSummary.inputCoverage}")
+            Text("Direct mood evidence: ${lowMoodEvidenceSummary.directEvidence}")
+            Text("Prior/base: ${lowMoodEvidenceSummary.baseScore}")
+            if(lowMoodEvidenceSummary.calibrationEffect!=0)Text("Calibration effect: ${if(lowMoodEvidenceSummary.calibrationEffect>0)"+" else ""}${lowMoodEvidenceSummary.calibrationEffect}") else Text("Calibration effect: none")
+            Text("Trend: insufficient trend evidence")
+            Muted("This is a non-diagnostic estimate of low/flat mood. Missing direct evidence is not evidence that you feel happy.")
+            Text("CONTRIBUTORS",style=MaterialTheme.typography.labelLarge)
+            lowMood.contributors.sortedByDescending {kotlin.math.abs(it.contribution)}.forEach {item->Text("${if(item.contribution>=0)"+" else ""}${String.format(java.util.Locale.UK,"%.1f",item.contribution)} ${item.source}");Muted(item.explanation)}
+            if(lowMoodEvidenceSummary.missingEvidence.isNotEmpty()) {Text("MISSING EVIDENCE",style=MaterialTheme.typography.labelLarge);lowMoodEvidenceSummary.missingEvidence.forEach {Muted("• $it")}}
+            Button(onClick={vm.navigate("Calibration:low_mood_load")},modifier=Modifier.fillMaxWidth()){Text("RATE LOW / FLAT MOOD")}
+        }}
+    }
     if(id=="body_battery") {
         cards.add {JamesCard("Calibration controls","YOU CAN CHANGE THIS WITHOUT CHANGING THE ALGORITHM") {
             SensorSwitch("Apply bounded recovery readiness adjustment",bodySettings.recoveryAwareStrain){enabled->vm.bodyBatterySettings(bodySettings.copy(recoveryAwareStrain=enabled))}
@@ -392,6 +409,16 @@ internal fun providerSyncStatus(stamp:String,now:Instant=Instant.now()):String {
         cards.add {JamesCard("Live diagnostics","${metric.label} · ${metric.score}/100") {
             Text("Calculated: ${metric.calculatedAt}")
             Text("Confidence: ${metric.confidence}")
+            if(id=="time_pressure") {
+                Text("Evidence state: ${metric.evidenceState.replace('_',' ')}")
+                when(metric.evidenceState) {
+                    "NO_KNOWN_CONSTRAINT"->Muted("No upcoming fixed constraint detected. This is limited evidence, not a measured zero or a claim about Time Ownership.")
+                    "DIRECT"->Muted("A fresh direct Time Pressure check-in supports this presentation.")
+                    else->Muted("This is inferred from known time constraints; Time Ownership remains a separate measure.")
+                }
+                Text("Prior/base: ${metric.baseScore}")
+                metric.contributors.firstOrNull {it.name=="Personal calibration"}?.let {Text("Calibration effect: ${if(it.contribution>0)"+" else ""}${String.format(java.util.Locale.UK,"%.1f",it.contribution)}")}
+            }
             Text("James Day: ${summary.jamesDay.id}")
             Text("Body Battery: ${summary.bodyBattery?:"Unavailable"} · Mental Reserve: ${summary.mentalReserve}")
             Text("Awake: ${summary.awakeMinutes/60}h ${summary.awakeMinutes%60}m · Time That Was Mine: ${summary.personalMinutes}m")
