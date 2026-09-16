@@ -27,6 +27,7 @@ object ShiftTrackerWorkContract {
     const val VERSION = 2
     const val PERMISSION = "uk.co.james.permission.SHIFT_TRACKER_WORK_CONTEXT"
     const val ACTION_EVENT = "uk.co.james.action.SHIFT_TRACKER_WORK_EVENT"
+    const val ACTION_ROTA = "uk.co.james.action.SHIFT_TRACKER_ROTA"
     const val ACTION_RECONCILE = "uk.co.james.action.SHIFT_TRACKER_RECONCILE"
     const val EXTRA_PAYLOAD = "uk.co.james.extra.SHIFT_TRACKER_WORK_PAYLOAD"
     const val MAX_PAYLOAD_BYTES = 24 * 1024
@@ -145,6 +146,24 @@ object WorkPayload {
                 data.text("taskType").ifBlank { null }
             )
         }.getOrNull()?.takeIf { it.externalEventId.isNotBlank() && it.externalShiftId.isNotBlank() && it.revision >= 0 }
+    }
+}
+
+/** Separate planned-shift payload.  It is deliberately not an actual event. */
+object RotaPayload {
+    fun parse(payload:String,clock:Instant=Instant.now()):List<CanonicalRotaEntry>? {
+        if(payload.toByteArray(Charsets.UTF_8).size>ShiftTrackerWorkContract.MAX_PAYLOAD_BYTES)return null
+        val body=runCatching {json.parseToJsonElement(payload).jsonObject}.getOrNull()?:return null
+        if(body.number("contractVersion",-1.0).toInt()!=ShiftTrackerWorkContract.VERSION)return null
+        val values=body["entries"] as? kotlinx.serialization.json.JsonArray?:return null
+        if(values.size>ShiftTrackerWorkContract.MAX_PAGE_SIZE)return null
+        return values.mapNotNull { element->
+            val item=element as? JsonObject?:return@mapNotNull null
+            val id=item.text("rotaId").trim();val shift=item.text("shiftId").trim()
+            val start=runCatching {Instant.parse(item.text("start"))}.getOrNull();val end=runCatching {Instant.parse(item.text("end"))}.getOrNull()
+            val revision=item.number("revision",-1.0).toLong();if(id.length !in 1..128||shift.length !in 1..128||start==null||end==null||revision !in 0..1_000_000L||start>clock.plus(Duration.ofDays(14)))return@mapNotNull null
+            runCatching {CanonicalRotaEntry(id,shift,start,end,revision,item.flag("deleted"),item.number("preparationMinutes",0.0).toLong().coerceIn(0,240))}.getOrNull()
+        }.takeIf { it.isNotEmpty() }
     }
 }
 
@@ -300,6 +319,19 @@ class WorkContextProvider(private val context: Context, private val repository: 
                     recordId = recordId, source = "shift_tracker", timestamp = event.occurredAt.toString()
                 ).changed("externalId" to p(event.externalEventId), "updatedAt" to p(receivedAt.toString()))
                 repository.dao.put(StoredRecord.from("personalRecords", raw))
+                // Concise factual context for Timeline/Today.  This is not an
+                // ownership row and carries no Balance points; Work ownership
+                // remains the separately materialised shift interval.
+                val activity=when(event.eventType) {
+                    WorkEventType.BREAK_STARTED -> "Work break"
+                    WorkEventType.DELIVERY_STARTED -> "Work delivery"
+                    WorkEventType.RETURNED_TO_STORE,WorkEventType.DELIVERY_COMPLETED -> "Back at store"
+                    else -> null
+                }
+                if(activity!=null) {
+                    val context=personal("LifeFactActivity",fields("title" to p(activity),"activity" to p(activity),"start" to p(event.occurredAt.toString()),"ownershipContext" to p("WORK"),"externalShiftId" to p(event.externalShiftId),"sourceEventId" to p(event.externalEventId),"provenance" to p("Shift Tracker factual activity.")),recordId="shift-tracker-activity:${event.externalEventId}",source="shift_tracker",timestamp=event.occurredAt.toString())
+                    repository.dao.put(StoredRecord.from("personalRecords",context))
+                }
                 accepted++
             }
             materializeActualWork(events,receivedAt)

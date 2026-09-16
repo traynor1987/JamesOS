@@ -44,6 +44,7 @@ import kotlinx.coroutines.flow.filter
             "Calibration Lab"->CalibrationLabScreen(vm)
             "Calibrate James OS"->CalibrationLabScreen(vm)
             "Connections"->ConnectionsScreen(vm,requestHealth,requestCalendar)
+            "Schedule"->ScheduleScreen(vm,data)
             "Location"->LocationScreen(vm,data,requestLocation,requestActivity,openAppSettings)
             "Location map"->LocationMapScreen(vm,data)
             "Import Centre"->ImportScreen(vm,chooseImport,export)

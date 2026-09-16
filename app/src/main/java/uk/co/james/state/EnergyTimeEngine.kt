@@ -135,7 +135,9 @@ private fun nextConstraint(records:List<StoredRecord>,clock:Instant):TimeConstra
         val scheduled=row.kind=="ScheduledCommitment"
         if(scheduled&&data.text("status","UPCOMING") !in setOf("UPCOMING","IN_PROGRESS")) return@mapNotNull null
         if(scheduled&&data.flag("allDay")) return@mapNotNull null
-        val explicit=data.flag("fixedConstraint")||scheduled||listOf("work","shift","appointment","commitment","obligation").any(label::contains)
+        // A Calendar/rota row is not a constraint merely because it is scheduled.
+        // Ingestion marks only timed BUSY/known fixed commitments as eligible.
+        val explicit=if(scheduled) data.flag("fixedConstraint") else data.flag("fixedConstraint")||listOf("work","shift","appointment","commitment","obligation").any(label::contains)
         if(!explicit)return@mapNotNull null
         val starts=data.text("start",data.text("startsAt",row.timestamp)).takeIf(::validTime)?.let(Instant::parse)?:return@mapNotNull null
         if(starts<=clock||starts>clock.plus(Duration.ofHours(36)))return@mapNotNull null

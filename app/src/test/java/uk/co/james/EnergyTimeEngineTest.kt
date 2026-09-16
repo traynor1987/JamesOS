@@ -67,6 +67,17 @@ class EnergyTimeEngineTest {
         assertFalse((base()+scheduled).any {it.kind=="OwnershipPeriod"})
     }
 
+    @Test fun freeAndAllDayCalendarEntriesDoNotPretendToBeConstraints() {
+        val free=row("ScheduledCommitment",fields("title" to p("Optional reminder"),"start" to p(clock.plus(Duration.ofMinutes(20)).toString()),"status" to p("UPCOMING"),"fixedConstraint" to p(false)),clock,"free","android_calendar")
+        val allDay=row("ScheduledCommitment",fields("title" to p("Birthday"),"start" to p(clock.plus(Duration.ofMinutes(10)).toString()),"status" to p("UPCOMING"),"allDay" to p(true),"fixedConstraint" to p(true)),clock,"all-day","android_calendar")
+        assertNull(rightNowSummary(base()+free+allDay,clock=clock,zone=ZoneOffset.UTC).nextConstraint)
+    }
+
+    @Test fun plannedPersonalCommitmentStillHasADeadline() {
+        val cinema=row("ScheduledCommitment",fields("title" to p("Cinema"),"start" to p(clock.plus(Duration.ofMinutes(45)).toString()),"status" to p("UPCOMING"),"plannedOwnership" to p("AUTONOMOUS"),"fixedConstraint" to p(true)),clock,"cinema","android_calendar")
+        assertEquals("Cinema",rightNowSummary(base()+cinema,clock=clock,zone=ZoneOffset.UTC).nextConstraint?.title)
+    }
+
     @Test fun nutritionIsContextAndMissingNutritionIsNeutral() {
         val meal=row("Nutrition",fields("title" to p("Breakfast"),"energyKcal" to p(812),"proteinGrams" to p(32),"provider" to p("com.mynetdiary")),clock.minus(Duration.ofMinutes(30)),"meal","health_connect")
         val withMeal=rightNowSummary(base()+meal,clock=clock,zone=ZoneOffset.UTC)

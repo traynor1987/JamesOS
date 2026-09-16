@@ -27,6 +27,7 @@ class CalendarScheduleSource(private val context:Context, private val repository
         val rules=repository.stateInputs(now).filter {it.kind=="CalendarClassificationRule"&&it.data().flag("enabled")}
         var changed=0
         repository.db.withTransaction {
+            val seen=rows.map {it.asCommitment().stableId}.toSet()
             rows.forEach { instance ->
                 val incoming=instance.asCommitment(); val old=repository.dao.get("personalRecords",incoming.stableId)
                 val oldData=old?.data()
@@ -41,6 +42,12 @@ class CalendarScheduleSource(private val context:Context, private val repository
                     "providerAvailability" to p(instance.availability?:"UNKNOWN"),"lastIngestedAt" to p(now.toString())
                 ),"updatedAt" to p(now.toString()))
                 if(old?.rawJson!=raw.toString()){repository.dao.put(StoredRecord.from("personalRecords",raw));changed++}
+            }
+            // Provider deletion only retires still-planned Calendar evidence.
+            // Independently confirmed Visits/Ownership are separate facts and
+            // are intentionally never touched here.
+            repository.dao.sourceKindBetween("android_calendar","ScheduledCommitment",now.toString(),now.plus(LOOK_AHEAD).toString()).filter {it.recordId !in seen&&it.data().text("status","UPCOMING")=="UPCOMING"}.forEach { stale ->
+                repository.dao.put(StoredRecord.from(stale.store,stale.raw().changed("data" to stale.data().changed("status" to p("CANCELLED"),"fixedConstraint" to p(false),"providerRemovedAt" to p(now.toString())),"updatedAt" to p(now.toString())));changed++
             }
         }
         return changed

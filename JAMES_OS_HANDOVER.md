@@ -2,7 +2,7 @@
 
 ## Scheduled Commitments v1 foundation (2026-09-16)
 
-See `JAMES_OS_SCHEDULED_COMMITMENTS.md`. Calendar is read-only, selected-calendar scoped planned evidence. Plans can affect Time Pressure v1.1.0 but never create actual ownership or Life Balance. The Shift Tracker v2 foundation supplies signature-protected actual clock evidence. Rota sender/replay and richer Upcoming/reconciliation UX remain follow-on work; this is not yet a complete Scheduled Commitments release.
+See `JAMES_OS_SCHEDULED_COMMITMENTS.md`. Calendar is read-only, selected-calendar scoped planned evidence. Plans can affect Time Pressure v1.1.0 but never create actual ownership or Life Balance. Calendar classification is optional and user-opened, with persistent event choices, two-week Not Now cooldowns and transparent rules. Shift Tracker v2 supplies signature-protected actual clock evidence, bounded replay, activity transitions and optional explicit rota start/end hand-off. Reminder-only rota rows remain reminders, not fabricated shifts.
 
 ## Project
 

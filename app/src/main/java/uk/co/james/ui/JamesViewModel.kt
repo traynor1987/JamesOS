@@ -548,8 +548,25 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
     fun pin(template: StoredRecord)=action {val old=repo.dao.get("settings","favourites")?.raw()?.array("value")?.mapNotNull {(it as? JsonPrimitive)?.content}?.toMutableList()?: mutableListOf();if(template.recordId in old)old.remove(template.recordId)else {require(old.size<12){"You can pin up to 12 events."};old.add(template.recordId)};repo.setting("favourites",JsonArray(old.map {p(it)}))}
     fun theme(value: String)=action {app.preferences.theme(value);repo.setting("theme",p(value))}
     fun refreshPermissions(){viewModelScope.launch {health.value=runCatching {app.health.status()}.getOrElse {HealthStatus(false,emptySet(),it.message?:"Unavailable")}}}
-    fun onAppResumed(){refreshPermissions();whoopSyncOnForeground();action { app.calendar.refresh(records.value.filter { it.kind=="CalendarSelection"&&it.data().flag("enabled") }.map {it.data().text("calendarId")}.toSet()) }}
-    fun calendarSelection(calendarId:String,name:String,enabled:Boolean)=action { repo.save("personalRecords",personal("CalendarSelection",fields("calendarId" to p(calendarId),"calendarName" to p(name.take(80)),"enabled" to p(enabled),"updatedAt" to p(now())),recordId="calendar-selection:$calendarId",source="manual")) }
+    private suspend fun refreshCalendarSchedule() {
+        val selected=repo.stateInputs().filter {it.kind=="CalendarSelection"&&it.data().flag("enabled")}.map {it.data().text("calendarId")}.toSet()
+        app.calendar.refresh(selected)
+    }
+    fun onAppResumed(){refreshPermissions();whoopSyncOnForeground();action { refreshCalendarSchedule() }}
+    fun calendarSelection(calendarId:String,name:String,enabled:Boolean)=action {
+        repo.save("personalRecords",personal("CalendarSelection",fields("calendarId" to p(calendarId),"calendarName" to p(name.take(80)),"enabled" to p(enabled),"updatedAt" to p(now())),recordId="calendar-selection:$calendarId",source="manual"))
+        refreshCalendarSchedule()
+    }
+    fun refreshCalendar()=action { refreshCalendarSchedule();message.value="Calendar refreshed." }
+    fun classifyCalendarCommitment(commitmentId:String,ownership:String,applyToSimilar:Boolean)=action {
+        app.calendar.classify(commitmentId,ownership,applyToSimilar)
+        refreshCalendarSchedule()
+    }
+    fun dismissCalendarClassification(commitmentId:String)=action {
+        app.calendar.dismissPrompt(commitmentId,java.time.Instant.now().plus(java.time.Duration.ofDays(14)))
+        message.value="Left unknown for now. James OS will not ask again for two weeks."
+    }
+    fun deleteCalendarRule(ruleId:String)=action { repo.dao.delete("personalRecords",ruleId);refreshCalendarSchedule() }
     private fun whoopSyncOnForeground() {
         if(!app.whoop.configured())return
         val source=records.value.firstOrNull {it.recordId=="source:whoop"}?.data()

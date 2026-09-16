@@ -12,11 +12,16 @@ import uk.co.james.JamesApplication
 /** Exported endpoint; Android enforces the signature permission before this code runs. */
 class ShiftTrackerWorkReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != ShiftTrackerWorkContract.ACTION_EVENT) return
-        val event = intent.getStringExtra(ShiftTrackerWorkContract.EXTRA_PAYLOAD)?.let(WorkPayload::parse) ?: return
+        val payload=intent.getStringExtra(ShiftTrackerWorkContract.EXTRA_PAYLOAD)?:return
         val pending = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-            try { (context.applicationContext as JamesApplication).work.ingest(listOf(event)) }
+            try {
+                val work=(context.applicationContext as JamesApplication).work
+                when(intent.action) {
+                    ShiftTrackerWorkContract.ACTION_EVENT -> WorkPayload.parse(payload)?.let {work.ingest(listOf(it))}
+                    ShiftTrackerWorkContract.ACTION_ROTA -> RotaPayload.parse(payload)?.let {work.ingestRota(it)}
+                }
+            }
             finally { pending.finish() }
         }
     }

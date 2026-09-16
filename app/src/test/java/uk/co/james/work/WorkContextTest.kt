@@ -86,6 +86,13 @@ class WorkContextTest {
         assertEquals("UPCOMING",rota.status)
     }
 
+    @Test fun rotaPayloadRemainsPlannedAndRequiresRealShiftTimes() {
+        val entries=RotaPayload.parse("""{"contractVersion":2,"entries":[{"rotaId":"rota-a","shiftId":"shift-a","start":"2026-09-15T17:00:00Z","end":"2026-09-15T23:00:00Z","revision":1}]}""",now)!!
+        assertEquals(1,entries.size)
+        assertEquals("WORK",entries.single().plannedOwnership)
+        assertNull(RotaPayload.parse("""{"contractVersion":2,"entries":[{"rotaId":"only-reminder"}]}""",now))
+    }
+
     @Test fun clockedShiftCreatesAndClosesOneActualWorkOwnership() = runBlocking {
         provider.ingest(listOf(
             event("start",WorkEventType.SHIFT_STARTED,"2026-09-14T17:56:00Z"),
@@ -95,5 +102,12 @@ class WorkContextTest {
         assertEquals("WORK",ownership.data().text("ownership"))
         assertEquals("2026-09-14T17:56:00Z",ownership.data().text("start"))
         assertEquals("2026-09-14T23:14:00Z",ownership.data().text("end"))
+    }
+
+    @Test fun breakAndDeliveryCreateContextNotAdditionalOwnership() = runBlocking {
+        provider.ingest(listOf(event("start",WorkEventType.SHIFT_STARTED,"2026-09-14T11:02:00Z"),event("delivery",WorkEventType.DELIVERY_STARTED,"2026-09-14T12:00:00Z"),event("break",WorkEventType.BREAK_STARTED,"2026-09-14T14:00:00Z")),now)
+        val rows=repository.stateInputs(now)
+        assertEquals(1,rows.count {it.kind=="OwnershipPeriod"&&it.data().text("ownership")=="WORK"})
+        assertEquals(2,rows.count {it.kind=="LifeFactActivity"&&it.source=="shift_tracker"})
     }
 }
