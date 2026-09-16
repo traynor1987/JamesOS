@@ -41,6 +41,13 @@ internal data class OwnershipSummary(val autonomousMinutes:Long,val committedMin
     val classifiedMinutes get()=autonomousMinutes+committedMinutes+constrainedMinutes+workMinutes
 }
 
+/** Current ownership is factual state, not a screen-local interpretation.
+ * This resolver is shared by the dedicated bounded DAO stream, transitions,
+ * and presentation so a route refresh cannot fall back to inferred location. */
+internal fun activeOwnershipPeriod(rows:List<StoredRecord>):StoredRecord? = rows.asSequence()
+    .filter {it.kind=="OwnershipPeriod"&&it.data().text("end").isBlank()}
+    .maxByOrNull {it.timestamp}
+
 internal fun ownershipSummary(intervals:List<OwnershipInterval>):OwnershipSummary {
     val sorted=intervals.filter {it.end>it.start}.sortedBy {it.start}
     fun minutes(kind:TimeOwnership)=sorted.filter {it.ownership==kind&&!it.interruption}.sumOf {Duration.between(it.start,it.end).toMinutes()}

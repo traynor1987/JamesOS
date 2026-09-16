@@ -27,9 +27,18 @@ import java.time.Instant
 
 /** The only current-ownership control surface.  Its local minute clock merely
  * updates the displayed duration; it does not recalculate historical state. */
+internal data class OwnershipChoice(val ownership:TimeOwnership,val label:String)
+internal val ownershipChoices=listOf(
+    OwnershipChoice(TimeOwnership.AUTONOMOUS,"PERSONAL"),
+    OwnershipChoice(TimeOwnership.COMMITTED,"OBLIGATION"),
+    OwnershipChoice(TimeOwnership.CONSTRAINED,"CONSTRAINED"),
+    OwnershipChoice(TimeOwnership.WORK,"WORK"),
+    OwnershipChoice(TimeOwnership.UNKNOWN,"UNKNOWN")
+)
+
 @Composable internal fun CurrentOwnershipControls(vm:JamesViewModel,showWhenUnknown:Boolean=true) {
     val records by vm.records.collectAsState()
-    val active=remember(records) { records.filter {it.kind=="OwnershipPeriod"&&it.data().text("end").isBlank()}.maxByOrNull {it.timestamp} }
+    val active by vm.currentOwnership.collectAsState()
     val activeInterruption=remember(records) { records.filter {it.kind=="VisitInterruption"&&it.data().text("end").isBlank()}.maxByOrNull {it.timestamp} }
     val ownership=active?.let {runCatching {TimeOwnership.valueOf(it.data().text("ownership","UNKNOWN"))}.getOrDefault(TimeOwnership.UNKNOWN)}?:TimeOwnership.UNKNOWN
     var changing by remember(active?.recordId,ownership) {mutableStateOf(false)}
@@ -55,20 +64,14 @@ import java.time.Instant
             Text("UNKNOWN",fontWeight=FontWeight.Black)
             Text("Choose only if you know who controlled this time.",style=androidx.compose.material3.MaterialTheme.typography.bodySmall)
         }
-        if(active==null||ownership==TimeOwnership.UNKNOWN||changing) OwnershipChoices(onSelect={value->vm.setCurrentOwnership(value)})
+        if(active==null||ownership==TimeOwnership.UNKNOWN||changing) OwnershipChoices(onSelect={value->vm.setCurrentOwnership(value.name)})
     }
 }
 
-@Composable private fun OwnershipChoices(onSelect:(String)->Unit) {
-    listOf(
-        "AUTONOMOUS" to "PERSONAL",
-        "COMMITTED" to "OBLIGATION",
-        "CONSTRAINED" to "CONSTRAINED",
-        "WORK" to "WORK",
-        "UNKNOWN" to "UNKNOWN"
-    ).chunked(2).forEach { row->
+@Composable private fun OwnershipChoices(onSelect:(TimeOwnership)->Unit) {
+    ownershipChoices.chunked(2).forEach { row->
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-            row.forEach {(value,label)->TextButton(onClick={onSelect(value)},modifier=Modifier.weight(1f).heightIn(min=48.dp)){Text(label)}}
+            row.forEach {choice->TextButton(onClick={onSelect(choice.ownership)},modifier=Modifier.weight(1f).heightIn(min=48.dp)){Text(choice.label)}}
             if(row.size==1) androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
         }
     }

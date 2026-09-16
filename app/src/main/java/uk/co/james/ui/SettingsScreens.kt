@@ -1,5 +1,6 @@
 package uk.co.james.ui
 
+import android.location.Location
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -240,10 +241,20 @@ internal fun providerSyncStatus(stamp:String,now:Instant=Instant.now()):String {
     val activity by vm.activityEnabled.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
     val calibration by vm.placeCalibration.collectAsStateWithLifecycle()
+    val currentOwnership by vm.currentOwnership.collectAsStateWithLifecycle()
+    val pendingPlaceSave by vm.pendingPlaceSave.collectAsStateWithLifecycle()
+    val pendingPlaceMerge by vm.pendingPlaceMerge.collectAsStateWithLifecycle()
     var name by rememberSaveable {mutableStateOf("")}
     var category by rememberSaveable {mutableStateOf("Home")}
     val visits=uk.co.james.location.authoritativeVisits(records).sortedByDescending {it.timestamp}
-    val savedPlaces=records.filter {it.kind=="Place"}
+    val savedPlaces=records.filter {it.kind=="Place"&&it.data().text("status")!="MERGED"}
+    val likelyDuplicatePlaces=remember(savedPlaces) {
+        savedPlaces.indices.flatMap {firstIndex->savedPlaces.drop(firstIndex+1).mapNotNull {second->
+            val first=savedPlaces[firstIndex];val firstData=first.data();val secondData=second.data();val distance=FloatArray(1)
+            Location.distanceBetween(firstData.number("latitude"),firstData.number("longitude"),secondData.number("latitude"),secondData.number("longitude"),distance)
+            if(distance[0]<=50f&&uk.co.james.location.placeNamesSupportSameIdentity(firstData.text("title"),secondData.text("title"))) first to second else null
+        }}
+    }
     val unknownVisits=visits.filter {visit->visit.data().text("title","Unknown place").let {it.isBlank()||it=="Unknown place"}}
     val current=records.firstOrNull {it.kind=="LocationAnchor"}
     val activeContext=records.filter {it.kind=="ContextPeriod"&&it.data().text("end").isBlank()}.maxByOrNull {it.timestamp}
@@ -257,7 +268,7 @@ internal fun providerSyncStatus(stamp:String,now:Instant=Instant.now()):String {
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {Text(if(allDay)"Building today’s places"else "Build my places timeline",modifier=Modifier.padding(top=13.dp));Switch(allDay,onCheckedChange={value->vm.action {vm.app.location.setAllDay(value)}})}
             Button(onClick={vm.navigate("Location map")}){Text("Open map")}
             Muted("Tracking continues with the screen off while this is on. James stores completed visits rather than an endless location trail; timing and position are approximate.")
-            current?.let {anchor->val d=anchor.data();val activeOwnership=records.filter {it.kind=="OwnershipPeriod"&&it.data().text("end").isBlank()}.maxByOrNull {it.timestamp};val lastSeen=runCatching {Instant.parse(d.text("lastSeen",d.text("start")))}.getOrNull();val age=lastSeen?.let {uk.co.james.location.ageText(java.time.Duration.between(it,Instant.now()).coerceAtLeast(java.time.Duration.ZERO))}?:"unknown";HorizontalDivider(Modifier.padding(vertical=8.dp));Text("Current place: ${d.text("placeName","Unknown place")}");Muted("Here ${visitTime(d.number("durationMin").toLong())} · ${d.text("movement","Stationary")} · accuracy ${d.number("accuracy").toInt()}m");Muted("Latest passive fix: $age old · ${d.text("provider","Fused low-power")}");activeContext?.data()?.text("visitType")?.let {Muted("Context: ${it.lowercase().replace('_',' ').replaceFirstChar(Char::uppercase)}")};Muted("Time ownership: ${activeOwnership?.data()?.text("ownership")?:"UNKNOWN"} · ${activeOwnership?.data()?.text("ownershipSource")?:"No confirmation"}")}
+            current?.let {anchor->val d=anchor.data();val lastSeen=runCatching {Instant.parse(d.text("lastSeen",d.text("start")))}.getOrNull();val age=lastSeen?.let {uk.co.james.location.ageText(java.time.Duration.between(it,Instant.now()).coerceAtLeast(java.time.Duration.ZERO))}?:"unknown";HorizontalDivider(Modifier.padding(vertical=8.dp));Text("Current place: ${d.text("placeName","Unknown place")}");Muted("Here ${visitTime(d.number("durationMin").toLong())} · ${d.text("movement","Stationary")} · accuracy ${d.number("accuracy").toInt()}m");Muted("Latest passive fix: $age old · ${d.text("provider","Fused low-power")}");activeContext?.data()?.text("visitType")?.let {Muted("Context: ${it.lowercase().replace('_',' ').replaceFirstChar(Char::uppercase)}")};Muted("Time ownership: ${currentOwnership?.data()?.text("ownership")?:"UNKNOWN"} · ${currentOwnership?.data()?.text("ownershipSource")?:"No confirmation"}")}
             CurrentOwnershipControls(vm)
         }},
         {JamesCard("Recent places",if(visits.isEmpty())"No completed stops yet"else "${visits.size} recorded") {
@@ -266,7 +277,10 @@ internal fun providerSyncStatus(stamp:String,now:Instant=Instant.now()):String {
         }},
         {JamesCard("Time ownership","Only James confirms ownership") {
             val now=java.time.Instant.now();val day=uk.co.james.time.jamesDayWindow(records,now)
-            val intervals=uk.co.james.location.ownershipIntervals(records,day.start,now)
+            // Route history is bounded; the dedicated active ownership stream
+            // supplies the authoritative live segment while it is open.
+            val ownershipRecords=records.filterNot {it.kind=="OwnershipPeriod"&&it.data().text("end").isBlank()}+listOfNotNull(currentOwnership)
+            val intervals=uk.co.james.location.ownershipIntervals(ownershipRecords,day.start,now)
             val summary=uk.co.james.location.ownershipSummary(intervals)
             Text("Autonomous ${visitTime(summary.autonomousMinutes)} · Constrained ${visitTime(summary.constrainedMinutes)}")
             Muted("Unknown ${visitTime(summary.unknownMinutes)} · ${summary.interruptions} interruption${if(summary.interruptions==1)"" else "s"} · longest autonomous block ${visitTime(summary.longestAutonomousBlockMinutes)}")
@@ -294,8 +308,36 @@ internal fun providerSyncStatus(stamp:String,now:Instant=Instant.now()):String {
             Choice("Place category",category,listOf("Home","Work","Family","Shopping","Gym","Food","Leisure","Health / appointment","Personal","Other")){category=it}
             calibration?.let {state->Text(state.title,style=MaterialTheme.typography.labelLarge);Muted(state.detail)}
             Button(enabled=name.isNotBlank()&&!busy,onClick={vm.saveCurrentPlace(name,category)}){Text(if(calibration?.inProgress==true)"Getting precise location…" else "Save current place")}
+            pendingPlaceSave?.let {pending->
+                HorizontalDivider(Modifier.padding(vertical=8.dp))
+                Text("Nearby saved place",fontWeight=androidx.compose.ui.text.font.FontWeight.Bold)
+                Muted("${pending.existingTitle} is ${pending.distanceMetres.toInt()}m away.${if(pending.sameName)" The names look similar." else " It may still be a separate nearby place."}")
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                    Button(onClick={vm.resolveCurrentPlaceSave(true)},modifier=Modifier.weight(1f)){Text("UPDATE EXISTING")}
+                    OutlinedButton(onClick={vm.resolveCurrentPlaceSave(false)},modifier=Modifier.weight(1f)){Text("SAVE SEPARATE")}
+                }
+                TextButton(onClick=vm::dismissCurrentPlaceSave){Text("CANCEL")}
+            }
             Muted("A saved place needs a fresh fix within ±${uk.co.james.location.PLACE_CALIBRATION_MAX_ACCURACY_METRES.toInt()}m. Passive five-minute tracking is not weakened for calibration.")
-            savedPlaces.forEach {Text("${it.data().text("title")} · ${it.data().text("category","Unclassified")}")}}
+            savedPlaces.forEach {Text("${it.data().text("title")} · ${it.data().text("category","Unclassified")}")}
+            likelyDuplicatePlaces.forEach {(first,second)->
+                val canonical=if(first.data().text("category","Unclassified")=="Unclassified"&&second.data().text("category","Unclassified")!="Unclassified") second else first
+                val duplicate=if(canonical===first)second else first
+                HorizontalDivider(Modifier.padding(vertical=8.dp))
+                Text("Possible duplicate",fontWeight=androidx.compose.ui.text.font.FontWeight.Bold)
+                Muted("${first.data().text("title")} and ${second.data().text("title")} are nearby with matching names. Merging preserves the duplicate and repoints factual history to one canonical place.")
+                OutlinedButton(onClick={vm.requestPlaceMerge(canonical,duplicate)},modifier=Modifier.fillMaxWidth()){Text("MERGE INTO ${canonical.data().text("title").uppercase()}")}
+            }
+            pendingPlaceMerge?.let {merge->
+                HorizontalDivider(Modifier.padding(vertical=8.dp))
+                Text("Merge saved places?",fontWeight=androidx.compose.ui.text.font.FontWeight.Bold)
+                Muted("Keep ${merge.canonicalTitle}. ${merge.duplicateTitle} becomes preserved merge history; visits and current place links move to the kept place.")
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                    Button(onClick=vm::mergePendingPlaces,modifier=Modifier.weight(1f)){Text("MERGE")}
+                    OutlinedButton(onClick=vm::dismissPlaceMerge,modifier=Modifier.weight(1f)){Text("CANCEL")}
+                }
+            }
+        }
         },
         {JamesCard("Movement recognition",if(activity)"Enabled"else "Disabled") {
             Muted("Android can identify likely walking, running and driving transitions. It cannot know the purpose of an activity.")

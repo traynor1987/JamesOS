@@ -1,5 +1,11 @@
 # James OS handover
 
+## Places / current Time Ownership correction (2026-09-17)
+
+Current Time Ownership is now read from one dedicated bounded `OwnershipPeriod` state query rather than independently inferred from the active route, current anchor or a visible history slice. The **OBLIGATION** control emits the canonical `COMMITTED` ownership value. Every transition also re-reads and closes any open authoritative period inside the Room transaction, so a route refresh, navigation, process recreation or passive location update cannot leave James’s explicit correction hidden behind inferred `UNKNOWN`. Location anchors/Visits remain factual location evidence only and never overwrite a confirmed ownership segment. Life Balance v2 continues to consume the same authoritative ownership ledger; no score is manually adjusted.
+
+Saving a current place now checks a fresh accurate calibration against existing saved-place coordinates before allocating a new stable ID. An existing nearby place is offered as **UPDATE EXISTING** or **SAVE SEPARATE**; a current anchor with the same verified stable identity updates safely. The check is conservative: accuracy, distance and saved radius are primary; name similarity merely supports the explanation. Known Places exposes an explicit, confirmation-gated merge for nearby matching candidates. A merge preserves the duplicate `Place` as `MERGED` provenance, preserves all Visits and context rows, repoints factual place links to the chosen canonical ID, and keeps explicit category metadata over `Unclassified`. It is a rare user action, not a reactive history scan.
+
 ## Scheduled Commitments v1 foundation (2026-09-16)
 
 See `JAMES_OS_SCHEDULED_COMMITMENTS.md`. Calendar is read-only, selected-calendar scoped planned evidence. Plans can affect Time Pressure v1.1.0 but never create actual ownership or Life Balance. Calendar classification is optional and user-opened, with persistent event choices, two-week Not Now cooldowns and transparent rules. Shift Tracker v2 supplies signature-protected actual clock evidence, bounded replay, activity transitions and optional explicit rota start/end hand-off. Reminder-only rota rows remain reminders, not fabricated shifts.

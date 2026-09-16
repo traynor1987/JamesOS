@@ -40,7 +40,13 @@ class LocationSource(private val context: Context,private val repo: JamesReposit
      * sample.  It may reuse a demonstrably fresh/accurate anchor; otherwise it
      * asks Fused Location for one high-accuracy fix and keeps the low-power
      * visit tracker untouched. */
-    suspend fun addCurrentPlace(name: String,category:String="Unclassified",onGettingPreciseFix:()->Unit = {}): CalibrationFix {
+    sealed interface CurrentPlaceSaveResult {
+        data class Saved(val fix:CalibrationFix,val placeId:String,val updatedExisting:Boolean):CurrentPlaceSaveResult
+        data class ExistingNearby(val fix:CalibrationFix,val duplicate:PlaceSaveDuplicate):CurrentPlaceSaveResult
+    }
+    enum class CurrentPlaceSaveResolution { ASK, UPDATE_EXISTING, SAVE_SEPARATE }
+
+    suspend fun addCurrentPlace(name: String,category:String="Unclassified",resolution:CurrentPlaceSaveResolution=CurrentPlaceSaveResolution.ASK,existingPlaceId:String?=null,onGettingPreciseFix:()->Unit = {}): CurrentPlaceSaveResult {
         require(name.isNotBlank() && precise()) { "Name the place and grant precise location first." }
         val now=Instant.now()
         val passive=passiveCalibrationFix()
@@ -51,14 +57,37 @@ class LocationSource(private val context: Context,private val repo: JamesReposit
         } else selectPlaceCalibrationFix(passive,null,null,now)
         val fix=(result as? PlaceCalibrationFixResult.Accepted)?.fix
             ?: throw IllegalArgumentException((result as PlaceCalibrationFixResult.Rejected).message)
-        val placeId="place:${id()}"
-        val place=personal("Place",fields("title" to p(name.trim()),"category" to p(category),"latitude" to p(fix.latitude),"longitude" to p(fix.longitude),"radius" to p(150)),placeId,"manual")
+        val matches=repo.dao.places().mapNotNull {saved->
+            val d=saved.data();val distance=FloatArray(1)
+            Location.distanceBetween(fix.latitude,fix.longitude,d.number("latitude"),d.number("longitude"),distance)
+            PlaceMatch(saved.recordId,d.text("title"),d.text("category","Unclassified"),distance[0],d.number("radius",150.0).toFloat())
+        }
+        val duplicate=placeSaveDuplicateCandidate(name.trim(),fix.accuracyMetres,matches)
+        val anchoredPlaceId=repo.dao.currentLocationAnchor("location:current-anchor")?.data()?.text("placeId")
+        val anchoredIdentityMatch=resolution==CurrentPlaceSaveResolution.ASK&&duplicate?.sameName==true&&duplicate.id==anchoredPlaceId
+        if(resolution==CurrentPlaceSaveResolution.ASK&&duplicate!=null&&!anchoredIdentityMatch)return CurrentPlaceSaveResult.ExistingNearby(fix,duplicate)
+        val requestedUpdateId=if(resolution==CurrentPlaceSaveResolution.UPDATE_EXISTING) existingPlaceId else duplicate?.id?.takeIf {anchoredIdentityMatch}
+        val updateId=requestedUpdateId?.takeIf {id->matches.any {it.id==id} }
+        if(resolution==CurrentPlaceSaveResolution.UPDATE_EXISTING||anchoredIdentityMatch) require(updateId!=null) { "The nearby saved place is no longer a verified match. Save it separately instead." }
+        val existing=updateId?.let {repo.dao.get("personalRecords",it)}
+        val placeId=if(existing==null)"place:${id()}" else existing.recordId
+        // An explicit update refreshes a verified place calibration while keeping
+        // its user-established name/category rather than accidentally erasing
+        // Family/Work metadata with a duplicate-save form default.
+        val place=if(existing==null) personal("Place",fields("title" to p(name.trim()),"category" to p(category),"latitude" to p(fix.latitude),"longitude" to p(fix.longitude),"radius" to p(150)),placeId,"manual")
+        else existing.raw().changed("data" to existing.data().changed("latitude" to p(fix.latitude),"longitude" to p(fix.longitude),"lastCalibratedAt" to p(now())),"updatedAt" to p(now()))
         repo.save("personalRecords",place)
         // A place may be saved just after leaving it. Give completed, unnamed visits
         // nearby the new label rather than making James wait for a future visit.
         relabelNearbyUnknownVisits(place,placeId)
+        repointCurrentAnchor(place,placeId)
         if(preferences.location.first())restore()
-        return fix
+        return CurrentPlaceSaveResult.Saved(fix,placeId,existing!=null)
+    }
+    private suspend fun repointCurrentAnchor(place:JsonObject,placeId:String) {
+        val anchor=repo.dao.currentLocationAnchor("location:current-anchor")?:return
+        val data=anchor.data().changed("placeId" to p(placeId),"placeName" to p(place.obj("data").text("title")),"placeConfidence" to p("MEDIUM"))
+        repo.save(anchor.store,anchor.raw().changed("data" to data,"updatedAt" to p(now())),anchor.rawJson)
     }
     private data class PreciseFixAttempt(val fix:CalibrationFix?,val failure:CalibrationFixFailure?)
     private suspend fun passiveCalibrationFix(): CalibrationFix? {
@@ -93,6 +122,11 @@ class LocationSource(private val context: Context,private val repo: JamesReposit
         val place=repo.dao.get("personalRecords",placeId)?.takeIf {it.kind=="Place"}?:return
         if(visit.kind!="PlaceVisit")return
         saveVisitWithPlace(visit,place.data(),place.recordId)
+    }
+    suspend fun mergeSavedPlaces(canonicalPlaceId:String,duplicatePlaceId:String):uk.co.james.data.PlaceMergeResult {
+        val result=repo.mergePlaces(canonicalPlaceId,duplicatePlaceId)
+        if(preferences.location.first())restore()
+        return result
     }
     private suspend fun relabelNearbyUnknownVisits(place:JsonObject,placeId:String) {
         val placeData=place.obj("data")

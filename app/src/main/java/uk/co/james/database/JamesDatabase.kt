@@ -59,10 +59,17 @@ interface JamesDao {
     @Query("SELECT * FROM records WHERE source=:source AND kind=:kind AND (timestamp > :afterTimestamp OR (timestamp = :afterTimestamp AND recordId > :afterRecordId)) ORDER BY timestamp, recordId LIMIT :limit") suspend fun sourceKindPage(source:String,kind:String,afterTimestamp:String,afterRecordId:String,limit:Int):List<StoredRecord>
     @Query("SELECT * FROM records WHERE store=:store ORDER BY timestamp") suspend fun store(store:String):List<StoredRecord>
     /** Place/context is deliberately scoped: live tracking never reads the historical records table. */
-    @Query("SELECT * FROM records WHERE store='personalRecords' AND kind='Place' ORDER BY updatedAt DESC LIMIT :limit") suspend fun places(limit:Int=100):List<StoredRecord>
+    @Query("SELECT * FROM records WHERE store='personalRecords' AND kind='Place' AND (candidateStatus IS NULL OR candidateStatus!='MERGED') ORDER BY updatedAt DESC LIMIT :limit") suspend fun places(limit:Int=100):List<StoredRecord>
+    /** Recent candidates are a tiny indexed state set. The JSON end marker is
+     * resolved in Kotlin so historical Room upgrades stay non-destructive. */
+    @Query("SELECT * FROM records WHERE store='personalRecords' AND kind='OwnershipPeriod' ORDER BY timestamp DESC LIMIT :limit") suspend fun ownershipCandidates(limit:Int=64):List<StoredRecord>
+    @Query("SELECT * FROM records WHERE store='personalRecords' AND kind='OwnershipPeriod' ORDER BY timestamp DESC LIMIT :limit") fun observeOwnershipCandidates(limit:Int=64):Flow<List<StoredRecord>>
     @Query("SELECT * FROM records WHERE store='personalRecords' AND kind='LocationAnchor' AND recordId=:id LIMIT 1") suspend fun currentLocationAnchor(id:String):StoredRecord?
     @Query("SELECT * FROM records WHERE (store='personalRecords' AND kind IN ('Place','LocationAnchor')) OR (store='personalRecords' AND kind IN ('PlaceVisit','OwnershipPeriod','VisitInterruption','ContextPeriod','LifeFactActivity') AND timestamp BETWEEN :start AND :end) ORDER BY timestamp DESC") fun observePlacesContext(start:String,end:String):Flow<List<StoredRecord>>
     @Query("SELECT * FROM records WHERE store='personalRecords' AND kind='PlaceVisit' AND timestamp BETWEEN :start AND :end ORDER BY timestamp") suspend fun visitsBetween(start:String,end:String):List<StoredRecord>
+    /** Rare explicit place repair only. Tracking/UI never invoke this history
+     * page, so a merge cannot become a reactive mature-database scan. */
+    @Query("SELECT * FROM records WHERE store='personalRecords' AND kind IN ('PlaceVisit','LocationAnchor','LocationEvent','ContextPeriod','LifeFactActivity') AND (timestamp > :afterTimestamp OR (timestamp = :afterTimestamp AND recordId > :afterRecordId)) ORDER BY timestamp, recordId LIMIT :limit") suspend fun placeReferencePage(afterTimestamp:String,afterRecordId:String,limit:Int):List<StoredRecord>
     /** Explicit one-off compatibility read.  It is intentionally limited to the
      * legacy context kinds, never a replay of the whole records table. */
     @Query("SELECT * FROM records WHERE store='personalRecords' AND kind IN ('ContextPeriod','LocationEvent') ORDER BY timestamp") suspend fun legacyVisitEvidence():List<StoredRecord>

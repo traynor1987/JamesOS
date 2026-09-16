@@ -23,6 +23,8 @@ import uk.co.james.calibration.*
 import java.io.File
 
 data class PlaceCalibrationUiState(val title:String,val detail:String,val inProgress:Boolean)
+data class PendingPlaceSave(val name:String,val category:String,val existingPlaceId:String,val existingTitle:String,val distanceMetres:Float,val sameName:Boolean)
+data class PlaceMergeUiState(val canonicalPlaceId:String,val canonicalTitle:String,val duplicatePlaceId:String,val duplicateTitle:String)
 data class RouteRecordsState(val key:String,val records:List<StoredRecord>,val loaded:Boolean)
 data class HistoryReadiness(val loaded:Boolean,val hasUserHistory:Boolean)
 data class CurrentHealthInputsReadiness(val loaded:Boolean)
@@ -47,6 +49,8 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
     val app=application as JamesApplication
     val repo=app.repository
     val records=repo.records.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),emptyList())
+    /** Dedicated current state; never infer it from the current route's rows. */
+    val currentOwnership=repo.activeOwnership.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),null)
     val wellbeingSettings=app.preferences.wellbeing.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),uk.co.james.settings.WellbeingSettings())
     val energyTimeSettings=app.preferences.energyTime.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),uk.co.james.settings.EnergyTimeSettings())
     private val stateRecordsSnapshot=flow {
@@ -103,6 +107,8 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
     val localCrashReport=MutableStateFlow(app.crashDiagnostics.read())
     val busy=MutableStateFlow(false)
     val placeCalibration=MutableStateFlow<PlaceCalibrationUiState?>(null)
+    val pendingPlaceSave=MutableStateFlow<PendingPlaceSave?>(null)
+    val pendingPlaceMerge=MutableStateFlow<PlaceMergeUiState?>(null)
     val plan=MutableStateFlow<ImportPlan?>(null)
     val merge=MutableStateFlow<MergeResult?>(null)
     val health=MutableStateFlow(HealthStatus(false,emptySet(),"Checking availability…"))
@@ -125,17 +131,52 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
     fun saveCurrentPlace(name:String,category:String)=action {
         placeCalibration.value=PlaceCalibrationUiState("Checking current location…","Using an existing fix immediately only when it is fresh and accurate.",true)
         try {
-            val fix=app.location.addCurrentPlace(name,category) {
+            when(val result=app.location.addCurrentPlace(name,category) {
                 placeCalibration.value=PlaceCalibrationUiState("Getting precise location…","Passive tracking is low power; calibration is requesting one fresh high-accuracy fix.",true)
+            }) {
+                is uk.co.james.location.LocationSource.CurrentPlaceSaveResult.ExistingNearby -> {
+                    pendingPlaceSave.value=PendingPlaceSave(name.trim(),category,result.duplicate.id,result.duplicate.title,result.duplicate.distanceMetres,result.duplicate.sameName)
+                    placeCalibration.value=PlaceCalibrationUiState("Nearby saved place found","${result.duplicate.title} is ${result.duplicate.distanceMetres.toInt()}m away. Choose whether to update it or save a separate place.",false)
+                    message.value="Choose how to handle the nearby saved place."
+                }
+                is uk.co.james.location.LocationSource.CurrentPlaceSaveResult.Saved -> {
+                    val detail=result.fix.diagnostic(java.time.Instant.now())
+                    placeCalibration.value=PlaceCalibrationUiState(if(result.updatedExisting)"Saved place updated" else "Place saved",detail,false)
+                    message.value="${if(result.updatedExisting)"Updated" else "Saved"} ${name.trim()} · $detail"
+                }
             }
-            val detail=fix.diagnostic(java.time.Instant.now())
-            placeCalibration.value=PlaceCalibrationUiState("Place saved",detail,false)
-            message.value="Saved ${name.trim()} · $detail"
         } catch(e:Exception) {
             placeCalibration.value=PlaceCalibrationUiState("Place not saved",e.message?:"Couldn't obtain a suitable calibration fix.",false)
             throw e
         }
     }
+    fun resolveCurrentPlaceSave(updateExisting:Boolean)=action {
+        val pending=pendingPlaceSave.value?:return@action
+        placeCalibration.value=PlaceCalibrationUiState("Saving place…","Checking the current location again before changing saved-place identity.",true)
+        val resolution=if(updateExisting) uk.co.james.location.LocationSource.CurrentPlaceSaveResolution.UPDATE_EXISTING else uk.co.james.location.LocationSource.CurrentPlaceSaveResolution.SAVE_SEPARATE
+        when(val result=app.location.addCurrentPlace(pending.name,pending.category,resolution,pending.existingPlaceId) {
+            placeCalibration.value=PlaceCalibrationUiState("Getting precise location…","Using a fresh accurate fix for the saved place.",true)
+        }) {
+            is uk.co.james.location.LocationSource.CurrentPlaceSaveResult.Saved -> {
+                pendingPlaceSave.value=null
+                val detail=result.fix.diagnostic(java.time.Instant.now())
+                placeCalibration.value=PlaceCalibrationUiState(if(result.updatedExisting)"Saved place updated" else "Place saved",detail,false)
+                message.value=if(result.updatedExisting)"Updated ${pending.existingTitle}." else "Saved ${pending.name} separately."
+            }
+            is uk.co.james.location.LocationSource.CurrentPlaceSaveResult.ExistingNearby -> error("The nearby-place decision could not be applied.")
+        }
+    }
+    fun dismissCurrentPlaceSave(){pendingPlaceSave.value=null;message.value="No saved place was changed."}
+    fun requestPlaceMerge(canonical:StoredRecord,duplicate:StoredRecord) {
+        pendingPlaceMerge.value=PlaceMergeUiState(canonical.recordId,canonical.data().text("title"),duplicate.recordId,duplicate.data().text("title"))
+    }
+    fun mergePendingPlaces()=action {
+        val request=pendingPlaceMerge.value?:return@action
+        val result=app.location.mergeSavedPlaces(request.canonicalPlaceId,request.duplicatePlaceId)
+        pendingPlaceMerge.value=null
+        message.value="Merged ${request.duplicateTitle} into ${request.canonicalTitle}; ${result.referencesRepointed} factual references preserved."
+    }
+    fun dismissPlaceMerge(){pendingPlaceMerge.value=null}
     fun navigate(value: String,main: Boolean=false) {app.crashDiagnostics.setRoute(value);saved["route"]=value;if(main)saved["tab"]=value}
     fun recordUiPhase(phase:String) { app.crashDiagnostics.setUiPhase(phase) }
     /** A contained preparation failure is diagnostic evidence, not an app crash.
@@ -237,7 +278,7 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
     fun setCurrentOwnership(ownership:String)=action {
         val selected=runCatching {uk.co.james.location.TimeOwnership.valueOf(ownership)}.getOrElse {error("Unknown time ownership.")}
         val stamp=now(); val anchor=records.value.firstOrNull {it.kind=="LocationAnchor"}
-        val open=records.value.filter {it.kind=="OwnershipPeriod"&&it.data().text("end").isBlank()}
+        val open=listOfNotNull(repo.currentOwnership())
         uk.co.james.location.changeOwnership(open.map {it.recordId},selected)
         repo.transitionOwnership(open,ownershipPeriod(selected,stamp,anchor?.recordId.orEmpty(),"James confirmed current time ownership."))
         message.value="${ownershipLabel(selected)} time recorded from now."
@@ -245,8 +286,8 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
     /** Closing is a first-class action.  The next period is explicitly Unknown,
      * never a fabricated obligation and never a silently running Personal timer. */
     fun endCurrentOwnership()=action {
-        val open=records.value.filter {it.kind=="OwnershipPeriod"&&it.data().text("end").isBlank()}
-        val active=open.maxByOrNull {it.timestamp}?:run {message.value="No active time ownership to end.";return@action}
+        val active=repo.currentOwnership()?:run {message.value="No active time ownership to end.";return@action}
+        val open=listOf(active)
         val current=runCatching {uk.co.james.location.TimeOwnership.valueOf(active.data().text("ownership","UNKNOWN"))}.getOrDefault(uk.co.james.location.TimeOwnership.UNKNOWN)
         val stamp=now(); val anchor=records.value.firstOrNull {it.kind=="LocationAnchor"}
         uk.co.james.location.endOwnership(active.recordId,current)
@@ -269,7 +310,7 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
      * daily ledger remains one non-overlapping source of truth. */
     fun interruptCurrentTime(reason:String="OTHER")=action {
         require(reason in listOf("SOMEONE_NEEDED_ME","CHORE_ERRAND","WORK","PHONE_CALL","APPOINTMENT","TRAVEL","CHOSE_TO_STOP","TIRED","OTHER","UNKNOWN"))
-        val open=records.value.filter {it.kind=="OwnershipPeriod"&&it.data().text("end").isBlank()}.maxByOrNull {it.timestamp}
+        val open=repo.currentOwnership()
         if(open?.data()?.text("ownership")!="AUTONOMOUS") { message.value="Set Personal time before recording an interruption."; return@action }
         val stamp=now(); val anchor=records.value.firstOrNull {it.kind=="LocationAnchor"}
         val interruption=personal("VisitInterruption",fields("visitId" to p(""),"anchorId" to p(anchor?.recordId?:""),"interruptedOwnershipPeriodId" to p(open.recordId),"reason" to p(reason),"start" to p(stamp),"end" to p(""),"source" to p("JAMES_CORRECTION"),"provenance" to p("James confirmed interruption.")),source="manual",timestamp=stamp)
@@ -280,7 +321,7 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
     fun resumeCurrentTime()=action {
         val interruption=records.value.filter {it.kind=="VisitInterruption"&&it.data().text("end").isBlank()}.maxByOrNull {it.timestamp}?:run {message.value="No active interruption.";return@action}
         val stamp=now(); val anchor=records.value.firstOrNull {it.kind=="LocationAnchor"}
-        val closes=records.value.filter {it.kind=="OwnershipPeriod"&&it.data().text("end").isBlank()}
+        val closes=listOfNotNull(repo.currentOwnership())
         val resumed=personal("OwnershipPeriod",fields("start" to p(stamp),"end" to p(""),"ownership" to p("AUTONOMOUS"),"ownershipSource" to p("JAMES_CONFIRMED"),"resumesInterruptionId" to p(interruption.recordId),"visitId" to p(""),"anchorId" to p(anchor?.recordId?:""),"provenance" to p("James resumed personal time.")),source="manual",timestamp=stamp)
         val closedInterruption=interruption.raw().changed("data" to interruption.data().changed("end" to p(stamp)),"updatedAt" to p(stamp))
         repo.transitionOwnership(closes,resumed,listOf(interruption.store to closedInterruption))

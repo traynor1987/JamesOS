@@ -68,4 +68,34 @@ class RepositoryReliabilityTest {
         active.delete();referenced.delete()
         Unit
     }
+
+    @Test fun approved_place_merge_repoints_facts_but_preserves_duplicate_provenance()=runBlocking {
+        val at="2026-09-12T12:00:00Z"
+        val canonical=personal("Place",fields("title" to p("Family House"),"category" to p("Family"),"latitude" to p(53.0),"longitude" to p(-2.7),"radius" to p(150)),"place:family","manual",at)
+        val duplicate=personal("Place",fields("title" to p("Family Houses"),"category" to p("Unclassified"),"latitude" to p(53.0001),"longitude" to p(-2.7001),"radius" to p(150)),"place:duplicate","manual",at)
+        val visit=personal("PlaceVisit",fields("title" to p("Family Houses"),"category" to p("Unclassified"),"placeId" to p("place:duplicate"),"start" to p(at),"end" to p("2026-09-12T13:00:00Z")),"visit:synthetic","gps",at)
+        val anchor=personal("LocationAnchor",fields("title" to p("Family Houses"),"category" to p("Unclassified"),"placeId" to p("place:duplicate"),"start" to p(at)),"location:current-anchor","gps",at)
+        repo.dao.putAll(listOf(StoredRecord.from("personalRecords",canonical),StoredRecord.from("personalRecords",duplicate),StoredRecord.from("personalRecords",visit),StoredRecord.from("personalRecords",anchor)))
+
+        val result=repo.mergePlaces("place:family","place:duplicate")
+
+        assertEquals(2,result.referencesRepointed)
+        assertEquals("Family",repo.dao.get("personalRecords","place:family")!!.data().text("category"))
+        assertEquals("MERGED",repo.dao.get("personalRecords","place:duplicate")!!.data().text("status"))
+        assertEquals("place:family",repo.dao.get("personalRecords","visit:synthetic")!!.data().text("placeId"))
+        assertEquals("place:family",repo.dao.get("personalRecords","location:current-anchor")!!.data().text("placeId"))
+        assertEquals(listOf("place:family"),repo.dao.places().map {it.recordId})
+    }
+
+    @Test fun ownership_transition_closes_database_active_period_even_when_screen_snapshot_is_empty()=runBlocking {
+        val started="2026-09-12T10:00:00Z";val boundary="2026-09-12T10:20:00Z"
+        val unknown=personal("OwnershipPeriod",fields("ownership" to p("UNKNOWN"),"ownershipSource" to p("INFERRED"),"start" to p(started),"end" to p("")),"ownership:unknown","gps",started)
+        val committed=personal("OwnershipPeriod",fields("ownership" to p("COMMITTED"),"ownershipSource" to p("JAMES_CONFIRMED"),"start" to p(boundary),"end" to p("")),"ownership:committed","manual",boundary)
+        repo.dao.put(StoredRecord.from("personalRecords",unknown))
+
+        repo.transitionOwnership(emptyList(),committed)
+
+        assertEquals(boundary,repo.dao.get("personalRecords","ownership:unknown")!!.data().text("end"))
+        assertEquals("COMMITTED",repo.currentOwnership()!!.data().text("ownership"))
+    }
 }

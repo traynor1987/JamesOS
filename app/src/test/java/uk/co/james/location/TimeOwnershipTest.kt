@@ -73,6 +73,23 @@ class TimeOwnershipTest {
         assertEquals(listOf("personal"),transition.closeIds)
         assertEquals(TimeOwnership.CONSTRAINED,transition.successor)
     }
+    @Test fun confirmed_committed_period_is_the_current_authoritative_ownership() {
+        val current=activeOwnershipPeriod(listOf(
+            row("OwnershipPeriod","unknown",fields("ownership" to p("UNKNOWN"),"start" to p("2026-09-10T10:00:00Z"),"end" to p("2026-09-10T10:20:00Z"))),
+            row("OwnershipPeriod","confirmed",fields("ownership" to p("COMMITTED"),"start" to p("2026-09-10T10:20:00Z"),"end" to p(""),"ownershipSource" to p("JAMES_CONFIRMED")))
+        ))
+        assertEquals("confirmed",current?.recordId)
+        assertEquals("COMMITTED",current?.data()?.text("ownership"))
+    }
+    @Test fun confirmed_committed_period_wins_when_location_refresh_keeps_an_unknown_visit() {
+        val rows=listOf(
+            row("PlaceVisit","visit",fields("ownership" to p("UNKNOWN"),"ownershipSource" to p("INFERRED"),"start" to p("2026-09-10T10:00:00Z"),"end" to p("2026-09-10T12:00:00Z"))),
+            row("OwnershipPeriod","confirmed",fields("ownership" to p("COMMITTED"),"ownershipSource" to p("JAMES_CONFIRMED"),"start" to p("2026-09-10T10:20:00Z"),"end" to p("")))
+        )
+        val intervals=ownershipIntervals(rows,instant("2026-09-10T10:00:00Z"),instant("2026-09-10T11:00:00Z"))
+        assertEquals(40,ownershipSummary(intervals).committedMinutes)
+        assertEquals("confirmed",activeOwnershipPeriod(rows)?.recordId)
+    }
     @Test fun interruption_is_not_a_deliberate_end() {
         val end=endOwnership("personal",TimeOwnership.AUTONOMOUS)
         val interrupted=interruptOwnership("personal",TimeOwnership.AUTONOMOUS)

@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
 import uk.co.james.core.*
 import uk.co.james.database.*
@@ -18,6 +19,8 @@ import uk.co.james.state.BodyBattery
 import uk.co.james.state.bodyBatteryRecord
 import uk.co.james.calibration.*
 import uk.co.james.location.reconstructLegacyVisits
+import uk.co.james.location.activeOwnershipPeriod
+import uk.co.james.location.mergedPlaceCategory
 import uk.co.james.whoop.WhoopMapper
 import java.io.File
 import java.time.*
@@ -25,6 +28,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 data class BodyBatteryPersistenceResult(val accepted:Boolean,val reason:String)
 data class ArchiveCleanupDiagnostics(val retainedBackups:Int,val orphanFilesFound:Int,val orphanFilesCleaned:Int,val stagedImportsRetained:Int,val failures:Int,val completedAt:String)
+data class PlaceMergeResult(val canonicalPlaceId:String,val mergedPlaceId:String,val referencesRepointed:Int)
 
 internal fun sameBodyBatteryStrainOwner(oldData:JsonObject?,newData:JsonObject):Boolean {
     if(oldData==null)return false
@@ -46,6 +50,9 @@ class JamesRepository(val context: Context, val db: JamesDatabase) {
     /** Global reactive state is deliberately bounded. Full history is accessed only
      * by explicit backup/import queries and route-specific windows. */
     val records=dao.observeStateInputs(Instant.now().minus(Duration.ofDays(40)).toString())
+    /** Current ownership cannot depend on whichever route happens to be open. */
+    val activeOwnership=dao.observeOwnershipCandidates().map(::activeOwnershipPeriod).distinctUntilChanged()
+    suspend fun currentOwnership():StoredRecord? = activeOwnershipPeriod(dao.ownershipCandidates())
     val imports=dao.imports()
     private val archiveDir=File(context.filesDir,"archives").apply { mkdirs() }
     private val activeStaged=ConcurrentHashMap.newKeySet<String>()
@@ -160,7 +167,9 @@ class JamesRepository(val context: Context, val db: JamesDatabase) {
     suspend fun transitionOwnership(openPeriods:Collection<StoredRecord>,successor:JsonObject,relatedRecords:Collection<Pair<String,JsonObject>> = emptyList()) = db.withTransaction {
         val stamp=successor.obj("data").text("start")
         require(validTime(stamp)) { "Ownership transition needs a valid start time." }
-        openPeriods.distinctBy {it.store to it.recordId}.forEach { expected->
+        // A screen snapshot is bounded by design. Re-read authoritative current
+        // candidates in the transaction so it cannot leave a stale period open.
+        (openPeriods+dao.ownershipCandidates()).distinctBy {it.store to it.recordId}.forEach { expected->
             val current=dao.get(expected.store,expected.recordId)?:return@forEach
             if(current.kind=="OwnershipPeriod"&&current.data().text("end").isBlank()) {
                 val closed=current.raw().changed(
@@ -176,6 +185,40 @@ class JamesRepository(val context: Context, val db: JamesDatabase) {
         }
         BackupCodec.validateRow("personalRecords",successor)
         dao.put(StoredRecord.from("personalRecords",successor))
+    }
+    /** A user-approved saved-place repair preserves both source rows.  The
+     * duplicate is retained as a MERGED provenance record while every factual
+     * reference points to the chosen canonical stable ID. */
+    suspend fun mergePlaces(canonicalPlaceId:String,duplicatePlaceId:String):PlaceMergeResult = db.withTransaction {
+        require(canonicalPlaceId!=duplicatePlaceId) { "Choose two different saved places." }
+        val canonical=dao.get("personalRecords",canonicalPlaceId)?.takeIf {it.kind=="Place"}?:error("Canonical place was not found.")
+        val duplicate=dao.get("personalRecords",duplicatePlaceId)?.takeIf {it.kind=="Place"}?:error("Duplicate place was not found.")
+        require(duplicate.data().text("status")!="MERGED") { "That saved place was already merged." }
+        val stamp=now()
+        val canonicalData=canonical.data().changed("category" to p(mergedPlaceCategory(canonical.data().text("category","Unclassified"),duplicate.data().text("category","Unclassified"))),"mergedPlaceIds" to p((canonical.data().text("mergedPlaceIds")+","+duplicate.recordId).trim(',')),"updatedAt" to p(stamp))
+        dao.put(StoredRecord.from(canonical.store,canonical.raw().changed("data" to canonicalData,"updatedAt" to p(stamp))))
+        val duplicateData=duplicate.data().changed("status" to p("MERGED"),"mergedIntoPlaceId" to p(canonical.recordId),"mergedAt" to p(stamp),"mergeSource" to p("JAMES_CONFIRMED"))
+        dao.put(StoredRecord.from(duplicate.store,duplicate.raw().changed("data" to duplicateData,"updatedAt" to p(stamp))))
+        var afterTimestamp="";var afterRecordId="";var repointed=0
+        while(true) {
+            val page=dao.placeReferencePage(afterTimestamp,afterRecordId,100)
+            if(page.isEmpty())break
+            page.forEach {row->
+                if(row.data().text("placeId")!=duplicate.recordId)return@forEach
+                val old=row.data()
+                val displayFromDuplicate=old.text("title").isBlank()||old.text("title")==duplicate.data().text("title")
+                val categoryFromDuplicate=old.text("category","Unclassified")=="Unclassified"||old.text("category")==duplicate.data().text("category")
+                var data=old.changed("placeId" to p(canonical.recordId),"placeIdentityMergedAt" to p(stamp))
+                if(displayFromDuplicate)data=data.changed("title" to p(canonicalData.text("title")))
+                if(categoryFromDuplicate)data=data.changed("category" to p(canonicalData.text("category","Unclassified")))
+                dao.put(StoredRecord.from(row.store,row.raw().changed("data" to data,"updatedAt" to p(stamp))))
+                repointed++
+            }
+            val last=page.last();afterTimestamp=last.timestamp;afterRecordId=last.recordId
+        }
+        val audit=personal("PlaceMerge",fields("canonicalPlaceId" to p(canonical.recordId),"mergedPlaceId" to p(duplicate.recordId),"mergedAt" to p(stamp),"source" to p("JAMES_CONFIRMED"),"referencesRepointed" to p(repointed)),source="manual",timestamp=stamp)
+        dao.put(StoredRecord.from("personalRecords",audit))
+        PlaceMergeResult(canonical.recordId,duplicate.recordId,repointed)
     }
     suspend fun calibrationDataset(algorithmId:String,from:Instant,to:Instant,limit:Int=1000):List<StoredRecord> =
         dao.calibrationEvents(algorithmId,from.toString(),to.toString(),limit)
