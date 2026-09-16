@@ -47,7 +47,11 @@ class CalendarScheduleSource(private val context:Context, private val repository
             // Independently confirmed Visits/Ownership are separate facts and
             // are intentionally never touched here.
             repository.dao.sourceKindBetween("android_calendar","ScheduledCommitment",now.toString(),now.plus(LOOK_AHEAD).toString()).filter {it.recordId !in seen&&it.data().text("status","UPCOMING")=="UPCOMING"}.forEach { stale ->
-                repository.dao.put(StoredRecord.from(stale.store,stale.raw().changed("data" to stale.data().changed("status" to p("CANCELLED"),"fixedConstraint" to p(false),"providerRemovedAt" to p(now.toString())),"updatedAt" to p(now.toString())));changed++
+                val cancelled=stale.raw().changed(
+                    "data" to stale.data().changed("status" to p("CANCELLED"),"fixedConstraint" to p(false),"providerRemovedAt" to p(now.toString())),
+                    "updatedAt" to p(now.toString())
+                )
+                repository.dao.put(StoredRecord.from(stale.store,cancelled));changed++
             }
         }
         return changed
