@@ -15,6 +15,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import uk.co.james.data.JamesRepository
 import uk.co.james.database.JamesDatabase
+import uk.co.james.core.text
 
 @RunWith(RobolectricTestRunner::class)
 @Config(application=android.app.Application::class)
