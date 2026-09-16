@@ -62,6 +62,12 @@ class ContextLoadTest {
         assertTrue(balance.days28.score!! in 0..100)
         assertTrue(balance.days7.personalMinutes>=120)
     }
+    @Test fun unchangedLifeBalanceIsNotReportedAsImproving() {
+        val stable=ownership("stable-autonomy","AUTONOMOUS",now.minus(Duration.ofDays(14)),now)
+        val balance=lifeBalance(listOf(stable),now)
+        assertEquals(balance.days7.score,balance.days14.score)
+        assertEquals("STEADY",balance.trend)
+    }
     @Test fun context_and_activity_do_not_create_ownership() {
         val context=context("home","PERSONAL",now.minus(Duration.ofHours(3)),now)
         val activity=record("LifeFactActivity",fields("title" to p("Gaming")),"gaming",now)

@@ -35,7 +35,7 @@ object JamesAlgorithmRegistry {
     const val STRESS_VERSION="1.0.0"
     const val WELLBEING_VERSION="1.6.0"
     const val ANXIETY_VERSION="1.3.0"
-    const val LOW_MOOD_VERSION="1.3.0"
+    const val LOW_MOOD_VERSION="1.3.1"
     const val SLEEPINESS_VERSION="1.0.0"
     const val SLEEPINESS_CALIBRATION="1.0.0"
     const val LIVE_ENERGY_VERSION="1.2.0"
@@ -43,7 +43,7 @@ object JamesAlgorithmRegistry {
     const val CRASH_RISK_VERSION="1.1.0"
     const val TIME_PRESSURE_VERSION="1.0.0"
     const val CONTEXT_LOAD_VERSION="1.0.0"
-    const val LIFE_BALANCE_VERSION="1.0.0"
+    const val LIFE_BALANCE_VERSION="1.0.1"
     const val CALIBRATION_ENGINE_VERSION="1.0.3"
 
     /** Explicit derived-score dependency graph used by calibration back-tests. */
@@ -150,9 +150,11 @@ object JamesAlgorithmRegistry {
             "wellbeing-inputs-v1","wellbeing-output-v1","2026-09-11",true,
             listOf("Rut","Sleep","Recovery","HRV","Activity","Personal time","Optional check-ins"),
             listOf(
+                AlgorithmChange(LOW_MOOD_VERSION,"2026-09-16","Corrected Life Balance trend arithmetic",listOf("A parenthesisation error made a stable 7-day and 14-day Life Balance score look like improvement. The correction changes only the descriptive Life Balance-derived trend label; Low-Mood Load score inputs, score, calibration and historical evidence are unchanged.")),
                 AlgorithmChange("1.2.0","2026-09-11","Corrected contribution direction",listOf("Fixed shared load-score sign handling for HRV and Recovery.","Sleep is shortfall based: longer sleep alone cannot worsen Low-Mood Load.","Physiological trend inputs now use a rolling window; one fresh reading cannot cause a large Low-Mood movement.","Rut movement toward neutral remains an improvement.")),
                 AlgorithmChange("1.0.0","2026-09-11","Initial personal baseline",listOf("One bad day and healthy rest are deliberately not treated as a trend."))
-            )
+            ),
+            calibrationCompatibleAlgorithmVersions=setOf("1.3.0",LOW_MOOD_VERSION)
         ),
         AlgorithmDefinition("sleepiness","James Sleepiness",SLEEPINESS_VERSION,SLEEPINESS_CALIBRATION,AlgorithmStatus.LEARNING,
             "An experimental personal estimate of James's current propensity or drive to sleep. Lower is better; it is not a diagnosis.",
@@ -197,7 +199,11 @@ object JamesAlgorithmRegistry {
             "A rolling 7-, 14- and 28-day personal-time and lived-life trend. It evolves Rut without rewriting historic point records.",
             "life-balance-facts-v1","life-balance-v1","2026-09-13",true,
             listOf("Personal time","Obligation time","Difficult context","Chosen activities"),
-            listOf(AlgorithmChange(LIFE_BALANCE_VERSION,"2026-09-13","Rolling factual foundation",listOf("Uses bounded rolling patterns, not lifetime point accumulation.","Recent improvement progressively displaces older difficult periods.","Historical Rut remains a separate preserved ledger.")))
+            listOf(
+                AlgorithmChange(LIFE_BALANCE_VERSION,"2026-09-16","Corrected 7/14-day trend arithmetic",listOf("A stable 7-day and 14-day score is now reported as stable rather than improvement. The rolling score and its underlying ownership evidence are unchanged.")),
+                AlgorithmChange("1.0.0","2026-09-13","Rolling factual foundation",listOf("Uses bounded rolling patterns, not lifetime point accumulation.","Recent improvement progressively displaces older difficult periods.","Historical Rut remains a separate preserved ledger."))
+            ),
+            calibrationCompatibleAlgorithmVersions=setOf("1.0.0",LIFE_BALANCE_VERSION)
         ),
         AlgorithmDefinition("calibration_engine","James Calibration Engine",CALIBRATION_ENGINE_VERSION,"1.0.0",AlgorithmStatus.ACTIVE,
             "Shared local-first infrastructure that measures deterministic score agreement, generates bounded candidates and preserves James approval.",

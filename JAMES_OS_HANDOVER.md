@@ -31,6 +31,10 @@ Part 2 maps only scored WHOOP Sleep raw evidence into one `SleepDetail` record p
 
 Normal Today language is provider-neutral: the existing compact sleep card adds Need and Shortfall/Surplus when supported, with a `Sleep details` drill-down. The detail view is the sole normal provenance location (`WHOOP Sleep`, recorded period, update and mapping version); it must not become a separate provider dashboard. `SleepDetail` is deliberately not a `HealthMetric`, so **Sleepiness v1 calibration, Body Battery, Recovery and all other algorithms are unchanged**. Workout/HR-zone mapping remains Part 3 only.
 
+### Low Mood / Time Pressure audit — 2026-09-16
+
+[JAMES_OS_LOW_MOOD_AUDIT.md](JAMES_OS_LOW_MOOD_AUDIT.md) traces Low-Mood Load and Time Pressure from current source and persisted-output contracts. Low Mood remains a non-diagnostic, slow proxy-load model: it has no direct motivation, enjoyment, engagement or self-care evidence, and does not consume Stress, Anxiety or Time Pressure outputs. Low-Mood v1.3.1 / Life Balance v1.0.1 correct only a trend-arithmetic defect that falsely reported equal 7-/14-day Life Balance scores as `IMPROVING`; score inputs, coefficients, calibration and other wellbeing algorithms are unchanged. The audit deliberately defers calibration/explanation UX and Time Pressure evidence-state improvements pending reviewed design; WHOOP Part 3 has not begun.
+
 The audit's original highest-priority findings are now remediated and tracked with evidence in [JAMES_OS_PRODUCT_AUDIT_REMEDIATION.md](JAMES_OS_PRODUCT_AUDIT_REMEDIATION.md): Health Connect capability/permission parity; non-destructive Visit corrections; incremental legacy Visit reconstruction; Visit-linked semantic periods; and James-Day Timeline filtering. The audit remains a historical snapshot; the remediation matrix and the current code are authoritative for present status. Continue to treat data correctness, provenance, bounded processing and coherent day semantics as prerequisites before adding providers, continuous Wear sampling, AI, prediction or another dashboard.
 
 ## Today 2.0 / Compact Today

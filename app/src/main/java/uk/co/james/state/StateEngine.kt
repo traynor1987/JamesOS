@@ -234,7 +234,7 @@ fun mentalWellbeing(records:List<StoredRecord>,settings:WellbeingSettings=Wellbe
     // rolling factual context rather than recomputing historic +/- points.
     val balance=lifeBalance(records,clock)
     val contextLoad=currentContext(records,clock)
-    val rutDirection=when { balance.days7.score==null||balance.days14.score==null->0.0; else->balance.days7.score-balance.days14.score/2.0 }
+    val rutDirection=when { balance.days7.score==null||balance.days14.score==null->0.0; else->(balance.days7.score-balance.days14.score)/2.0 }
     val reports=records.filter {it.kind in setOf("MoodEntry","WellbeingCheckIn")}.filter {row->observedAt(row)?.let {it<=clock.plus(Duration.ofMinutes(5))&&it.atZone(zone).toLocalDate()>=today.minusDays(27)}==true}
     val moodChecks=reports.size
     val recentMood=reports.maxByOrNull {observedAt(it)?:Instant.MIN}?.data()?.text("mood")

@@ -185,6 +185,15 @@ class StateEngineTest {
         assertTrue(below.lowMood.score>at.lowMood.score)
     }
 
+    @Test fun stableLifeBalanceDoesNotClaimLowMoodIsImproving() {
+        val base=Instant.parse("2026-09-11T12:00:00Z")
+        val ownership=StoredRecord.from("personalRecords",personal("OwnershipPeriod",fields(
+            "ownership" to p("AUTONOMOUS"),"ownershipSource" to p("JAMES_CONFIRMED"),
+            "start" to p(base.minus(Duration.ofDays(14)).toString()),"end" to p(base.toString())
+        ),"stable-autonomy","manual",base.minus(Duration.ofDays(14)).toString()))
+        assertEquals("STABLE →",mentalWellbeing(listOf(ownership),clock=base,zone=ZoneOffset.UTC).lowMood.trend)
+    }
+
     @Test fun exerciseSuppressesExertionLikeAnxietyAndSelfReportIsBounded() {
         val stationary=wellbeingScenario(hrv=30.0,recovery=30.0,rhr=90.0,stressValue=65.0)
         val exercising=wellbeingScenario(hrv=30.0,recovery=30.0,rhr=90.0,stressValue=65.0,exercise=true)
