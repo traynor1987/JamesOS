@@ -80,6 +80,14 @@ class WorkContextTest {
         assertEquals(WorkMode.OFF_WORK, modeAfter(WorkEventType.SHIFT_ENDED, WorkMode.DELIVERY))
     }
 
+    @Test fun reconciliationDiscoveryOnlyAcceptsTheKnownShiftTrackerPackage() {
+        assertEquals(
+            ShiftTrackerWorkContract.SENDER_PACKAGE,
+            shiftTrackerReceiverPackage(listOf("other.app", ShiftTrackerWorkContract.SENDER_PACKAGE))
+        )
+        assertNull(shiftTrackerReceiverPackage(listOf("other.app")))
+    }
+
     @Test fun rotaIsPlannedEvidenceAndNeverAnActualShift() {
         val rota=CanonicalRotaEntry("rota-a","shift-a",Instant.parse("2026-09-15T17:00:00Z"),Instant.parse("2026-09-15T23:00:00Z"),1)
         assertEquals("WORK",rota.plannedOwnership)

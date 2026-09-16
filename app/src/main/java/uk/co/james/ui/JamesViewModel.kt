@@ -605,7 +605,7 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
         message.value=if(started) "Request sent to your watch. Keep it snug and still for about 45 seconds." else "Your watch is not connected. Reconnect it and try again."
     }
     fun wearSensors(v:uk.co.james.settings.WearSensorSettings)=action {app.preferences.wearSensors(v);if(!app.wear.sendSensorSettings(v))message.value="Watch settings saved here; connect your watch to apply them."}
-    fun reconcileShiftTracker()=action {message.value=if(app.work.requestReconciliation())"Shift Tracker reconciliation requested." else "Shift Tracker sender is waiting for Part 2."}
+    fun reconcileShiftTracker()=action {message.value=if(app.work.requestReconciliation())"Shift Tracker reconciliation requested." else "Shift Tracker 2.2.65 is not installed or its integration receiver is unavailable."}
     fun healthSync()=action {app.health.sync();val nutrition=app.nutrition.sync();refreshPermissions();message.value="Health data synced. Nutrition: ${nutrition.nutritionReturned} food records returned; ${nutrition.recordsPersisted} records saved."}
     fun healthSyncQuietly() {
         val now=System.currentTimeMillis()

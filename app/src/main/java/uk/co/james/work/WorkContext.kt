@@ -2,7 +2,6 @@ package uk.co.james.work
 
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import androidx.room.withTransaction
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -25,6 +24,10 @@ import java.time.Instant
 /** Contract constants are deliberately generic: James OS does not contain Domino's workflow. */
 object ShiftTrackerWorkContract {
     const val VERSION = 2
+    /** The stable Shift Tracker package is the only app permitted to answer a
+     * reconciliation request.  Never select an arbitrary receiver for this
+     * protected, factual integration. */
+    const val SENDER_PACKAGE = "site.chatgpt.traynor1987.dominosshifttracker.stable"
     const val PERMISSION = "uk.co.james.permission.SHIFT_TRACKER_WORK_CONTEXT"
     const val ACTION_EVENT = "uk.co.james.action.SHIFT_TRACKER_WORK_EVENT"
     const val ACTION_ROTA = "uk.co.james.action.SHIFT_TRACKER_ROTA"
@@ -35,6 +38,11 @@ object ShiftTrackerWorkContract {
     const val INITIAL_HISTORY_DAYS = 40L
     const val STALE_SHIFT_HOURS = 18L
 }
+
+/** Keeps package-manager discovery conservative even when another app declares
+ * the public action. */
+internal fun shiftTrackerReceiverPackage(packages: Iterable<String>): String? =
+    packages.firstOrNull { it == ShiftTrackerWorkContract.SENDER_PACKAGE }
 
 enum class WorkEventType {
     SHIFT_STARTED, SHIFT_ENDED, BREAK_STARTED, BREAK_ENDED,
@@ -351,9 +359,15 @@ class WorkContextProvider(private val context: Context, private val repository: 
         return accepted
     }
 
-    fun endpointPackage(): String? = context.packageManager
-        .queryBroadcastReceivers(Intent(ShiftTrackerWorkContract.ACTION_RECONCILE), PackageManager.MATCH_DEFAULT_ONLY)
-        .firstOrNull()?.activityInfo?.packageName
+    fun endpointPackage(): String? {
+        // Do not use MATCH_DEFAULT_ONLY: a protected receiver is not an
+        // activity launch target and legitimately does not declare CATEGORY_DEFAULT.
+        val intent = Intent(ShiftTrackerWorkContract.ACTION_RECONCILE)
+            .setPackage(ShiftTrackerWorkContract.SENDER_PACKAGE)
+        val packages = context.packageManager.queryBroadcastReceivers(intent, 0)
+            .mapNotNull { it.activityInfo?.packageName }
+        return shiftTrackerReceiverPackage(packages)
+    }
 
     fun endpointAvailable(): Boolean = endpointPackage() != null
 

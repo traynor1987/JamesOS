@@ -208,7 +208,7 @@ internal fun providerSyncStatus(stamp:String,now:Instant=Instant.now()):String {
     }}
     val work=uk.co.james.work.deriveCurrentWorkState(records)
     val workMeta=records.firstOrNull {it.recordId=="shift-tracker-integration"}?.data()
-    cards.add {JamesCard("Shift Tracker",if(vm.app.work.endpointAvailable())"Available" else "Waiting for Shift Tracker update") {Text("James OS receiver: READY · Contract v1");Text("Current state: ${work.mode.name.replace("_"," ")}");workMeta?.text("lastSuccessfulIngest")?.takeIf {it.isNotBlank()}?.let {Muted("Last import: ${localClock(it)}")};Muted("Shift Tracker remains authoritative. No test shifts are created here.");TextButton(onClick={vm.reconcileShiftTracker()}){Text("RECONCILE NOW")}}}
+    cards.add {JamesCard("Shift Tracker",if(vm.app.work.endpointAvailable())"Connected · Contract v2" else "Shift Tracker 2.2.65 not detected") {Text("James OS receiver: READY · Contract v2");Text("Current state: ${work.mode.name.replace("_"," ")}");workMeta?.text("lastSuccessfulIngest")?.takeIf {it.isNotBlank()}?.let {Muted("Last import: ${localClock(it)}")};Muted(if(vm.app.work.endpointAvailable())"Shift Tracker remains authoritative. No test shifts are created here." else "Install or update Shift Tracker 2.2.65, then reconnect it here. No test shifts are created here.");TextButton(onClick={vm.reconcileShiftTracker()}){Text("RECONCILE NOW")}}}
     val whoopConfigured by vm.whoopConfigured.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
     val whoop=records.firstOrNull {it.recordId=="source:whoop"}?.data()

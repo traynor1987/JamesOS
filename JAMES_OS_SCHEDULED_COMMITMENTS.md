@@ -16,6 +16,10 @@ Unknown planned ownership is valid. Manual event classification survives refresh
 
 Shift Tracker is the Work authority. Rota is planned Work evidence only when Shift Tracker supplies explicit start/end shift fields; reminder rows are not invented into rota. Actual clock-in/out becomes actual Work ownership. Break and delivery transitions create concise factual activity context inside that Work period; they do not end Work or create Balance points. The explicit signature-protected v2 contract remains backwards-compatible with v1, retains a bounded local replay ledger and accepts out-of-order/idempotent events. James OS and Shift Tracker both continue independently if the other app is absent.
 
+### Receiver discovery correction (2026-09-17)
+
+James OS discovers only the stable Shift Tracker package and queries its protected reconciliation receiver without `MATCH_DEFAULT_ONLY`; broadcast receivers do not need the activity-launcher `CATEGORY_DEFAULT`. Android package visibility now declares the stable package explicitly. The Connections UI reports **Contract v2** and gives an install/receiver-availability diagnosis rather than claiming that the sender is "waiting for Part 2". Shift Tracker targets the actual stable James OS package (`uk.co.james.personal`) when publishing rota and factual work events; it must not target the Kotlin namespace (`uk.co.james`).
+
 ## Time Pressure, reconciliation and backup
 
 Time Pressure v1.1.0 accepts eligible timed Scheduled Commitments as its next known fixed constraint. Only explicit preparation buffers reduce usable time; travel is never guessed. A schedule never writes actual ownership. Matching Visit/activity/manual evidence can support future reconciliation; missing GPS is not non-attendance.
