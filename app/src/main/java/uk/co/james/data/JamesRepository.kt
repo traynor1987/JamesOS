@@ -57,15 +57,23 @@ class JamesRepository(val context: Context, val db: JamesDatabase) {
     suspend fun backfillWhoopSleepDetails(at:Instant=Instant.now(),force:Boolean=false):Int = db.withTransaction {
         val key="whoop-sleep-detail-backfill:${WhoopMapper.SLEEP_DETAIL_MAPPING_VERSION}"
         if(!force&&dao.get("metadata",key)!=null)return@withTransaction 0
-        val raws=dao.sourceKindBetween("whoop","ExternalRecord",at.minus(Duration.ofDays(40)).toString(),at.toString())
-            .filter {it.data().text("type")=="sleep"}
-            .mapNotNull {WhoopMapper.sleepDetailRecord(it.data().obj("original"))}
-        val candidates=raws.map {StoredRecord.from("personalRecords",it)}.groupBy {it.recordId}.values.map {versions->versions.maxBy {it.updatedAt}}
-        val existing=candidates.map {it.recordId}.distinct().chunked(500).flatMap {dao.getByIds("personalRecords",it)}.associateBy {it.recordId}
-        val accepted=candidates.filter {incoming->existing[incoming.recordId]?.let {old->old.source==incoming.source&&incoming.updatedAt>=old.updatedAt}?:true}
-        if(accepted.isNotEmpty())dao.putAll(accepted)
-        dao.put(StoredRecord.from("metadata",fields("key" to p(key),"value" to fields("mappingVersion" to p(WhoopMapper.SLEEP_DETAIL_MAPPING_VERSION),"completedAt" to p(now()),"records" to p(accepted.size)))))
-        accepted.size
+        var afterTimestamp=""
+        var afterRecordId=""
+        var mapped=0
+        while(true) {
+            val page=dao.sourceKindPage("whoop","ExternalRecord",afterTimestamp,afterRecordId,100)
+            if(page.isEmpty())break
+            val candidates=page.asSequence().filter {it.data().text("type")=="sleep"}
+                .mapNotNull {WhoopMapper.sleepDetailRecord(it.data().obj("original"))}
+                .map {StoredRecord.from("personalRecords",it)}.groupBy {it.recordId}.values.map {versions->versions.maxBy {it.updatedAt}}
+            val existing=candidates.map {it.recordId}.distinct().chunked(100).flatMap {dao.getByIds("personalRecords",it)}.associateBy {it.recordId}
+            val accepted=candidates.filter {incoming->existing[incoming.recordId]?.let {old->old.source==incoming.source&&incoming.updatedAt>=old.updatedAt}?:true}
+            if(accepted.isNotEmpty())dao.putAll(accepted)
+            mapped+=accepted.size
+            val last=page.last();afterTimestamp=last.timestamp;afterRecordId=last.recordId
+        }
+        dao.put(StoredRecord.from("metadata",fields("key" to p(key),"value" to fields("mappingVersion" to p(WhoopMapper.SLEEP_DETAIL_MAPPING_VERSION),"completedAt" to p(now()),"records" to p(mapped)))))
+        mapped
     }
     suspend fun readFile(uri: Uri): String = withContext(Dispatchers.IO) {
         context.contentResolver.openInputStream(uri)?.use { input -> val output=java.io.ByteArrayOutputStream();val buffer=ByteArray(8192);var count=input.read(buffer);while(count!=-1){require(output.size()+count<=40*1024*1024){"Backup exceeds 40 MB."};output.write(buffer,0,count);count=input.read(buffer)};output.toString("UTF-8") } ?: error("Cannot open the chosen file.")
@@ -89,8 +97,7 @@ class JamesRepository(val context: Context, val db: JamesDatabase) {
             dao.importHistory(ImportHistory(id(),plan.source,now(),plan.rows.size,merge.additions.size,merge.duplicates,merge.conflicts.size,"",original.id))
             merge
         }
-        // Imported legacy records may be older than the local watermark. This
-        // is the only deliberate full compatibility pass; normal startup stays incremental.
+        // Imported legacy records may be older than the local watermark.
         reconstructLegacyVisits(afterImport=true)
         // Import can restore a prior backup containing raw WHOOP sleep but no
         // derived Part 2 companion. Rebuild only from local evidence; never

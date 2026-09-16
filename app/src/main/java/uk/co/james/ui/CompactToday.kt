@@ -151,6 +151,7 @@ private fun compactDuration(minutes:Long)=if(minutes<60)"${minutes}m" else "${mi
     refreshFailure:TodayPreparation.Failed<TodayPrepared>?=null
 ) {
     val state=ready.compact
+    var sleepDetailOpen by rememberSaveable {mutableStateOf(false)}
     LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(horizontal=16.dp,vertical=18.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
         item("title") {Box(Modifier.fillMaxWidth(),contentAlignment=Alignment.Center){Column(Modifier.widthIn(max=840.dp)){PageTitle("Good ${if(LocalTime.now().hour<12)"morning" else if(LocalTime.now().hour<18)"afternoon" else "evening"}, James.",LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE d MMMM")))}}}
         if(refreshing)item("health-refresh") {LinearProgressIndicator(Modifier.fillMaxWidth())}
@@ -176,7 +177,9 @@ private fun compactDuration(minutes:Long)=if(minutes<60)"${minutes}m" else "${mi
             CurrentOwnershipControls(vm,showWhenUnknown=false)
             CompactSummaryRow("TIME OWNERSHIP",state.time.ifEmpty {listOf("No time ownership confirmed yet")}){vm.navigate("Life Balance")}
             if(state.places.isNotEmpty())CompactSummaryRow("PLACES",state.places){vm.navigate("Location")}
-            CompactSummaryRow("LAST SLEEP",state.sleep.ifEmpty {listOf("Sleep data unavailable")}){vm.navigate("Connections")}
+            CompactSummaryRow("LAST SLEEP",state.sleep.ifEmpty {listOf("Sleep data unavailable")}){
+                if(ready.healthOverview.sleepDetail!=null)sleepDetailOpen=true else vm.navigate("Connections")
+            }
             if(state.routines.isNotEmpty())CompactSummaryRow("ROUTINES",state.routines){vm.navigate("Routines")}
             CompactQuickActions(vm,ready.context)
         }}
@@ -185,6 +188,7 @@ private fun compactDuration(minutes:Long)=if(minutes<60)"${minutes}m" else "${mi
         if(state.timeline.isEmpty())item("timeline-empty") {JamesCard("No moments yet"){Muted("Meaningful events will appear here as your James Day unfolds.")}}
         item("timeline-more") {TextButton(onClick={vm.navigate("Timeline",true)},modifier=Modifier.fillMaxWidth()){Text("OPEN FULL TIMELINE")}}
     }
+    if(sleepDetailOpen)ready.healthOverview.sleepDetail?.let {SleepDetailDialog(it,onDismiss={sleepDetailOpen=false})}
 }
 
 private fun openMetric(vm:JamesViewModel,id:String)=when(id){"mental_reserve","anxiety_load","low_mood_load"->vm.navigate("Insights",true);else->vm.navigate("Algorithm:$id")}

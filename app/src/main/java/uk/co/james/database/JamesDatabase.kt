@@ -52,6 +52,10 @@ interface JamesDao {
     @Query("SELECT * FROM records WHERE timestamp BETWEEN :start AND :end ORDER BY timestamp") suspend fun between(start:String,end:String):List<StoredRecord>
     @Query("SELECT * FROM records WHERE kind=:kind AND timestamp BETWEEN :start AND :end ORDER BY timestamp") suspend fun kindBetween(kind:String,start:String,end:String):List<StoredRecord>
     @Query("SELECT * FROM records WHERE source=:source AND kind=:kind AND timestamp BETWEEN :start AND :end ORDER BY timestamp") suspend fun sourceKindBetween(source:String,kind:String,start:String,end:String):List<StoredRecord>
+    /** Compatibility mappers may walk retained provider evidence, but only in
+     * fixed-size pages. This keeps mature-database upgrade work bounded without
+     * making normal UI/state queries historical scans. */
+    @Query("SELECT * FROM records WHERE source=:source AND kind=:kind AND (timestamp > :afterTimestamp OR (timestamp = :afterTimestamp AND recordId > :afterRecordId)) ORDER BY timestamp, recordId LIMIT :limit") suspend fun sourceKindPage(source:String,kind:String,afterTimestamp:String,afterRecordId:String,limit:Int):List<StoredRecord>
     @Query("SELECT * FROM records WHERE store=:store ORDER BY timestamp") suspend fun store(store:String):List<StoredRecord>
     /** Place/context is deliberately scoped: live tracking never reads the historical records table. */
     @Query("SELECT * FROM records WHERE store='personalRecords' AND kind='Place' ORDER BY updatedAt DESC LIMIT :limit") suspend fun places(limit:Int=100):List<StoredRecord>

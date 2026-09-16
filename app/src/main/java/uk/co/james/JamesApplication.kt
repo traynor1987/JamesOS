@@ -28,5 +28,10 @@ class JamesApplication : Application() {
     val wear by lazy { uk.co.james.wear.WearCompanion(this) }
     val work by lazy { WorkContextProvider(this,repository) }
     val crashDiagnostics by lazy { LocalCrashDiagnostics(this) }
-    override fun onCreate() {super.onCreate();crashDiagnostics.install();BackgroundJobs.schedule(this);if(whoop.configured())BackgroundJobs.scheduleWhoop(this);CoroutineScope(SupervisorJob()+Dispatchers.IO).launch {runCatching {repository.reconstructLegacyVisits()}}}
+    override fun onCreate() {super.onCreate();crashDiagnostics.install();BackgroundJobs.schedule(this);if(whoop.configured())BackgroundJobs.scheduleWhoop(this);CoroutineScope(SupervisorJob()+Dispatchers.IO).launch {
+        runCatching {repository.reconstructLegacyVisits()}
+        // Upgrade compatibility is local-only and idempotent: existing WHOOP
+        // raw Sleep evidence becomes prepared detail without a future sync.
+        runCatching {repository.backfillWhoopSleepDetails()}
+    }}
 }

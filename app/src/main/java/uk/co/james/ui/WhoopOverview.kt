@@ -506,7 +506,7 @@ private fun sleepDuration(millis:Double?):String?=millis?.takeIf {it.isFinite()&
     }
 }
 
-@Composable private fun SleepDetailDialog(detail:StoredRecord,onDismiss:()->Unit) {
+@Composable internal fun SleepDetailDialog(detail:StoredRecord,onDismiss:()->Unit) {
     val d=detail.data();fun duration(key:String)=sleepDuration(d.number(key,Double.NaN).takeIf(Double::isFinite))
     @Composable fun line(label:String,value:String?){if(value!=null)Text("$label  $value",style=MaterialTheme.typography.bodyMedium)}
     AlertDialog(onDismissRequest=onDismiss,title={Text("Sleep detail")},text={Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)) {
