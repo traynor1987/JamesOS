@@ -1,5 +1,9 @@
 # James OS handover
 
+## Scheduled Commitments v1 foundation (2026-09-16)
+
+See `JAMES_OS_SCHEDULED_COMMITMENTS.md`. Calendar is read-only, selected-calendar scoped planned evidence. Plans can affect Time Pressure v1.1.0 but never create actual ownership or Life Balance. The Shift Tracker v2 foundation supplies signature-protected actual clock evidence. Rota sender/replay and richer Upcoming/reconciliation UX remain follow-on work; this is not yet a complete Scheduled Commitments release.
+
 ## Project
 
 - Repository: https://github.com/traynor1987/JamesOS
