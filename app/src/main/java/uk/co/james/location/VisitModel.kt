@@ -30,7 +30,7 @@ internal fun inferredOwnership():TimeOwnership = TimeOwnership.UNKNOWN
 internal fun choosePlace(matches:List<PlaceMatch>):PlaceMatch? =
     matches.filter { it.distanceMetres <= it.radiusMetres + 100f }.minByOrNull { it.distanceMetres }
 
-internal data class PlaceSaveDuplicate(val id:String,val title:String,val category:String,val distanceMetres:Float,val sameName:Boolean)
+data class PlaceSaveDuplicate(val id:String,val title:String,val category:String,val distanceMetres:Float,val sameName:Boolean)
 private const val SAVE_PLACE_MAX_MATCH_DISTANCE_METRES=50f
 private const val SAVE_PLACE_MAX_ACCURACY_METRES=50f
 
