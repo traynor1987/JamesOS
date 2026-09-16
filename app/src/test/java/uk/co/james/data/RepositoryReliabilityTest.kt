@@ -7,6 +7,7 @@ import java.io.File
 import java.time.Duration
 import java.time.Instant
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.jsonObject
 import org.junit.*
 import org.junit.Assert.*
 import org.junit.runner.RunWith
