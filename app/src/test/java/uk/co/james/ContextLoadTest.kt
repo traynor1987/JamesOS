@@ -100,6 +100,7 @@ class ContextLoadTest {
             record("LifeFactActivity",fields("title" to p("Gaming")),"game",now),
             record("HealthMetric",fields("metric" to p("Recovery"),"value" to p(12)),"recovery",now),
             StoredRecord.from("loggedEvents",fields("id" to p("rut"),"title" to p("Old pull"),"points" to p(-870),"type" to p("negative"),"timestamp" to p(now.toString()),"createdAt" to p(now.toString()),"updatedAt" to p(now.toString()),"localDate" to p(now.toString().substring(0,10))))
+        )
         val baseline=lifeBalanceV2(facts,now).days7
         val withUnrelated=lifeBalanceV2(facts+unrelated,now).days7
         assertNotNull(baseline.score)
