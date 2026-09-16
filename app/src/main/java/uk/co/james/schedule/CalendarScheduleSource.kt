@@ -10,6 +10,7 @@ import uk.co.james.core.fields
 import uk.co.james.core.personal
 import uk.co.james.core.text
 import uk.co.james.core.flag
+import uk.co.james.core.obj
 import uk.co.james.core.p
 import uk.co.james.data.JamesRepository
 import uk.co.james.database.StoredRecord
@@ -34,7 +35,8 @@ class CalendarScheduleSource(private val context:Context, private val repository
                 val rule=rules.firstOrNull { rule -> rule.data().text("calendarId")==instance.calendarId&&rule.data().text("title")==instance.title.trim().lowercase() }
                 val ownership=oldData?.text("plannedOwnership")?.takeIf { oldData.text("classificationProvenance")=="MANUAL_EVENT" }?:rule?.data()?.text("ownership")?:incoming.plannedOwnership
                 val provenance=if(oldData?.text("classificationProvenance")=="MANUAL_EVENT")"MANUAL_EVENT" else if(rule!=null)"USER_RULE" else "UNKNOWN"
-                val raw=incoming.asRecord().changed("data" to incoming.asRecord().data().changed(
+                val incomingRaw=incoming.asRecord()
+                val raw=incomingRaw.changed("data" to incomingRaw.obj("data").changed(
                     "plannedOwnership" to p(ownership),"classificationProvenance" to p(provenance),
                     "providerAvailability" to p(instance.availability?:"UNKNOWN"),"lastIngestedAt" to p(now.toString())
                 ),"updatedAt" to p(now.toString()))
