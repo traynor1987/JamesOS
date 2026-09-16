@@ -44,6 +44,7 @@ object JamesAlgorithmRegistry {
     const val TIME_PRESSURE_VERSION="1.0.0"
     const val CONTEXT_LOAD_VERSION="1.0.0"
     const val LIFE_BALANCE_VERSION="1.0.1"
+    const val LIFE_BALANCE_V2_VERSION="2.0.0"
     const val CALIBRATION_ENGINE_VERSION="1.0.3"
 
     /** Explicit derived-score dependency graph used by calibration back-tests. */
@@ -196,8 +197,15 @@ object JamesAlgorithmRegistry {
             listOf("Personal/Neutral/Obligation","Difficult intervals","Factual interactions","Duration"),
             listOf(AlgorithmChange(CONTEXT_LOAD_VERSION,"2026-09-13","Initial bounded context model",listOf("Obligation alone is limited and does not mean misery.","Difficult intervals are preserved separately; multiple intervals do not flatten a whole visit.","Unknown context has no penalty.")))
         ),
-        AlgorithmDefinition("life_balance","Life Balance",LIFE_BALANCE_VERSION,"1.0.0",AlgorithmStatus.LEARNING,
-            "A rolling 7-, 14- and 28-day personal-time and lived-life trend. It evolves Rut without rewriting historic point records.",
+        AlgorithmDefinition("life_balance_v2","Life Balance",LIFE_BALANCE_V2_VERSION,"1.0.0",AlgorithmStatus.LEARNING,
+            "A non-diagnostic 7-, 28- and 90-day ownership, autonomy and continuity interpretation. It is not mood, health, productivity or Legacy RUT.",
+            "life-balance-facts-v2","life-balance-v2","2026-09-16",true,
+            listOf("Time Ownership","Ownership coverage","Autonomous continuity","Interruptions"),
+            listOf(AlgorithmChange(LIFE_BALANCE_V2_VERSION,"2026-09-16","Modern successor to Legacy RUT",listOf("Uses only versioned OwnershipPeriod/Visit ownership and interruption facts.","Unknown reduces coverage rather than Balance; Work and commitments are described rather than punished.","Legacy RUT and Life Balance v1 remain separate historical evidence. Low Mood and Mental Reserve retain their v1-compatible Balance input."))),
+            calibrationCompatibleAlgorithmVersions=setOf(LIFE_BALANCE_V2_VERSION)
+        ),
+        AlgorithmDefinition("life_balance","Life Balance v1 (historical)",LIFE_BALANCE_VERSION,"1.0.0",AlgorithmStatus.DEPRECATED,
+            "Historical rolling personal-time and lived-life trend retained for version-compatible downstream scoring and history.",
             "life-balance-facts-v1","life-balance-v1","2026-09-13",true,
             listOf("Personal time","Obligation time","Difficult context","Chosen activities"),
             listOf(
@@ -217,8 +225,8 @@ object JamesAlgorithmRegistry {
                 AlgorithmChange("1.0.0","2026-09-13","Initial calibration platform",listOf("Collects direct and eligible structured check-in evidence.","Evaluates MAE, bias, coverage and context slices.","Requires bounded validation and manual activation; no LLM controls production scoring."))
             )
         ),
-        AlgorithmDefinition("rut","Rut","1.0.0","1.0.0",AlgorithmStatus.ACTIVE,
-            "James's existing event-led Rut score and history.", "rut-inputs-v1","rut-output-v1","2026-09-01",true,
+        AlgorithmDefinition("rut","Legacy RUT","1.0.0","1.0.0",AlgorithmStatus.DEPRECATED,
+            "Historical event-led RUT ledger. Preserved for import and history; not a current wellbeing algorithm.", "rut-inputs-v1","rut-output-v1","2026-09-01",true,
             listOf("Recorded life events","Recoveries","Day reviews"),
             listOf(AlgorithmChange("1.0.0","2026-09-01","Registry adoption",listOf("Existing Rut history is preserved.")))
         )

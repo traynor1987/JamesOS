@@ -26,6 +26,48 @@ data class LifeBalanceWindow(val days:Int,val score:Int?,val personalMinutes:Lon
     val unclassifiedMinutes:Long get()=(relevantMinutes-(classifiedMinutes+unknownMinutes)).coerceAtLeast(0)
 }
 data class LifeBalanceSummary(val current:LifeBalanceWindow,val days7:LifeBalanceWindow,val days14:LifeBalanceWindow,val days28:LifeBalanceWindow,val trend:String,val autonomy:String,val helping:List<String>,val hurting:List<String>)
+
+/**
+ * Version 2 is deliberately a separate calculation trace.  Version 1 remains
+ * the compatibility input for Low Mood and Mental Reserve; v2 never feeds a
+ * v1 coefficient by accident.  It consumes ownership and interruption facts
+ * only, and is rebuilt deterministically from those facts on every bounded
+ * route snapshot rather than persisted as self-invalidating derived state.
+ */
+data class LifeBalanceV2Window(
+    val days:Int,
+    val score:Int?,
+    val evidenceState:String,
+    val autonomousMinutes:Long,
+    val committedMinutes:Long,
+    val constrainedMinutes:Long,
+    val workMinutes:Long,
+    val unknownMinutes:Long,
+    val classifiedMinutes:Long,
+    val observedWakingMinutes:Long,
+    val coveragePercent:Int,
+    val interruptions:Int,
+    val interruptionMinutes:Long,
+    val longestAutonomousBlockMinutes:Long,
+    val algorithmVersion:String="2.0.0"
+) {
+    val ownershipDistribution:Map<String,Int> get() {
+        val denominator=classifiedMinutes.takeIf {it>0}?:return emptyMap()
+        fun share(minutes:Long)=((minutes*100)/denominator).toInt()
+        return linkedMapOf("Autonomous" to share(autonomousMinutes),"Committed" to share(committedMinutes),"Constrained" to share(constrainedMinutes),"Work" to share(workMinutes),"Unknown" to ((unknownMinutes*100)/observedWakingMinutes.coerceAtLeast(1)).toInt())
+    }
+    val label:String get()=when(score) {
+        null->"LEARNING"
+        in 0..19->"STRONGLY CONSTRAINED"
+        in 20..39->"CONSTRAINED"
+        in 40..59->"MIXED"
+        in 60..79->"ALIGNED"
+        else->"STRONGLY ALIGNED"
+    }
+}
+data class LifeBalanceV2Summary(val days7:LifeBalanceV2Window,val days28:LifeBalanceV2Window,val days90:LifeBalanceV2Window,val primary:LifeBalanceV2Window,val trend:String) {
+    val current:LifeBalanceV2Window get()=primary
+}
 private fun StoredRecord.fieldTime(key:String)=data().text(key).takeIf(::validTime)?.let {Instant.parse(it)}
 private fun StoredRecord.period():ContextPeriod? {if(kind!="ContextPeriod")return null;val start=fieldTime("start")?:return null;return ContextPeriod(recordId,start,fieldTime("end"),runCatching {VisitType.valueOf(data().text("visitType","UNKNOWN"))}.getOrDefault(VisitType.UNKNOWN),data().text("placeId").ifBlank {null},data().text("placeName").ifBlank {null},source,data().text("jamesDayId").ifBlank {null})}
 private fun overlap(start:Instant,end:Instant,from:Instant,to:Instant)=Duration.between(maxOf(start,from),minOf(end,to)).toMinutes().coerceAtLeast(0)
@@ -58,3 +100,53 @@ private fun window(rows:List<StoredRecord>,clock:Instant,days:Int):LifeBalanceWi
  return LifeBalanceWindow(days,score,personal,obligation,ledger.constrainedMinutes,ledger.workMinutes,ledger.unknownMinutes,ledger.classifiedMinutes,difficult,activities,daysRecorded,ledger.interruptions,ledger.interruptionMinutes,ledger.longestAutonomousBlockMinutes,relevant,coverage)
 }
 fun lifeBalance(rows:List<StoredRecord>,clock:Instant=Instant.now()):LifeBalanceSummary {val a=window(rows,clock,7);val b=window(rows,clock,14);val c=window(rows,clock,28);val trend=when {a.score==null->"LEARNING";b.score==null->"STEADY";(a.score-b.score)/2>=5->"IMPROVING";(a.score-b.score)/2<=-5->"BELOW USUAL";else->"STEADY"};val help=buildList {if(a.personalMinutes>=60L)add("Confirmed personal time");if(a.constrainedMinutes==0L&&a.classifiedMinutes>=180L)add("No confirmed constrained time")};val hurt=buildList {if(a.classifiedMinutes>=120L&&a.personalMinutes<60L)add("Low confirmed personal time");if(a.constrainedMinutes>=120L)add("Constrained time");if(a.difficultMinutes>0L)add("Difficult context")};return LifeBalanceSummary(a,a,b,c,trend,if(a.score==null)"LEARNING" else if(a.personalMinutes<60L)"LOW PERSONAL TIME" else "STEADY",help,hurt)}
+
+private fun balanceV2Window(rows:List<StoredRecord>,clock:Instant,days:Int):LifeBalanceV2Window {
+    val from=jamesDayWindow(rows,clock).start.minus(Duration.ofDays((days-1).toLong()))
+    val ledger=ownershipSummary(ownershipIntervals(rows,from,clock))
+    // When retained main-sleep intervals are available, remove them from the
+    // denominator.  Older/fallback history has no invented sleep ownership;
+    // it remains a conservative selected-window coverage calculation.
+    val sleepIntervals=rows.asSequence().filter {it.kind=="HealthMetric"&&it.data().text("metric")=="Sleep"&&!it.data().flag("nap")}
+        .mapNotNull {row->
+            val data=row.data();val start=data.text("start",row.timestamp).takeIf(::validTime)?.let(Instant::parse)?:return@mapNotNull null
+            val minutes=data.number("value",Double.NaN).takeIf {it.isFinite()&&it>0}?.toLong()?:return@mapNotNull null
+            val end=data.text("end").takeIf(::validTime)?.let(Instant::parse)?:start.plus(Duration.ofMinutes(minutes))
+            maxOf(start,from) to minOf(end,clock)
+        }.filter {it.second>it.first}.sortedBy {it.first}.toList()
+    var sleepMinutes=0L;var mergedStart:Instant?=null;var mergedEnd:Instant?=null
+    sleepIntervals.forEach {(start,end)->if(mergedEnd==null||start>mergedEnd){if(mergedStart!=null)sleepMinutes+=Duration.between(mergedStart!!,mergedEnd!!).toMinutes();mergedStart=start;mergedEnd=end}else if(end>mergedEnd!!)mergedEnd=end}
+    if(mergedStart!=null)sleepMinutes+=Duration.between(mergedStart!!,mergedEnd!!).toMinutes()
+    val observed=Duration.between(from,clock).toMinutes().coerceAtLeast(0).minus(sleepMinutes).coerceAtLeast(0)
+    val covered=ledger.classifiedMinutes+ledger.unknownMinutes
+    val coverage=if(observed==0L)0 else ((covered*100)/observed).toInt().coerceIn(0,100)
+    // A bounded fact model needs both meaningful classified time and enough of
+    // the selected horizon understood. Unknown lowers availability only.
+    val enough=ledger.classifiedMinutes>=360L&&coverage>=35
+    if(!enough)return LifeBalanceV2Window(days,null,"LEARNING",ledger.autonomousMinutes,ledger.committedMinutes,ledger.constrainedMinutes,ledger.workMinutes,ledger.unknownMinutes,ledger.classifiedMinutes,observed,coverage,ledger.interruptions,ledger.interruptionMinutes,ledger.longestAutonomousBlockMinutes)
+    val denominator=ledger.classifiedMinutes.toDouble()
+    val autonomous=ledger.autonomousMinutes/denominator
+    val constrained=ledger.constrainedMinutes/denominator
+    // Work and commitments are described, not punished. Fragmentation has a
+    // deliberately small bounded effect: it cannot outweigh ownership itself.
+    val fragmentation=if(ledger.autonomousMinutes==0L)0.0 else (ledger.interruptionMinutes.toDouble()/ledger.autonomousMinutes).coerceIn(0.0,1.0)
+    val base=50.0+autonomous*38.0-constrained*38.0-fragmentation*8.0
+    val score=base.roundToInt().coerceIn(0,100)
+    return LifeBalanceV2Window(days,score,"COVERED",ledger.autonomousMinutes,ledger.committedMinutes,ledger.constrainedMinutes,ledger.workMinutes,ledger.unknownMinutes,ledger.classifiedMinutes,observed,coverage,ledger.interruptions,ledger.interruptionMinutes,ledger.longestAutonomousBlockMinutes)
+}
+
+/** Modern Life Balance.  No RUT, location category, activity label, health or
+ * mood metric is consulted here; those remain independently inspectable facts. */
+fun lifeBalanceV2(rows:List<StoredRecord>,clock:Instant=Instant.now()):LifeBalanceV2Summary {
+    val days7=balanceV2Window(rows,clock,7)
+    val days28=balanceV2Window(rows,clock,28)
+    val days90=balanceV2Window(rows,clock,90)
+    val primary=days28.score?.let {days28}?:days7
+    val trend=when {
+        days7.score==null||days28.score==null->"INSUFFICIENT TREND EVIDENCE"
+        days7.score-days28.score>=6->"RECENTLY MORE ALIGNED"
+        days28.score-days7.score>=6->"RECENTLY MORE CONSTRAINED"
+        else->"STEADY"
+    }
+    return LifeBalanceV2Summary(days7,days28,days90,primary,trend)
+}

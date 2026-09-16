@@ -401,6 +401,7 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
             "low_mood_load"->wellbeing.value.lowMood.let {CalibrationTarget(it.score,it.confidence,null,entry.algorithmVersion,wellbeing.value.calibrationVersions["low_mood_load"]?:entry.calibrationVersion,wellbeing.value.calibrationSetIds["low_mood_load"].orEmpty())}
             "context_load"->uk.co.james.state.currentContext(rows).let {val active=JamesCalibrationEngine.activeCalibration(rows,"context_load",entry.calibrationVersion,entry.algorithmVersion);CalibrationTarget(it.score,it.confidence,it.active?.jamesDayId,entry.algorithmVersion,active.version,active.setId)}
             "life_balance"->uk.co.james.state.lifeBalance(rows).current.score?.let {val active=JamesCalibrationEngine.activeCalibration(rows,"life_balance",entry.calibrationVersion,entry.algorithmVersion);CalibrationTarget(it,"ROLLING",null,entry.algorithmVersion,active.version,active.setId)}
+            "life_balance_v2"->uk.co.james.state.lifeBalanceV2(rows).current.score?.let {val active=JamesCalibrationEngine.activeCalibration(rows,"life_balance_v2",entry.calibrationVersion,entry.algorithmVersion);CalibrationTarget(it,"OWNERSHIP COVERAGE",null,entry.algorithmVersion,active.version,active.setId)}
             "james_stress"->rows.filter {it.kind=="HealthMetric"&&it.data().text("metric")=="James Stress"}.maxByOrNull {it.timestamp}?.let {val active=JamesCalibrationEngine.activeCalibration(rows,"james_stress",entry.calibrationVersion,entry.algorithmVersion);CalibrationTarget(JamesCalibrationEngine.applyActiveScore(it.data().number("value").toInt().coerceIn(0,100),rows,"james_stress"),"SOURCE",it.data().text("jamesDayId").ifBlank {null},entry.algorithmVersion,active.version,active.setId)}
             else->null
         }?:return null
@@ -415,18 +416,19 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
         "time_pressure"->listOf("NOT AT ALL","A LITTLE","SOMEWHAT","A LOT","EXTREMELY")
         "context_load"->listOf("NOT AT ALL","A LITTLE","MODERATE","A LOT","EXTREME")
         "life_balance"->listOf("DEFINITELY NOT","MOSTLY NOT","MIXED","MOSTLY YES","DEFINITELY YES")
+        "life_balance_v2"->listOf("HARDLY ANY OF MY TIME FELT LIKE MINE","A LITTLE OF MY TIME FELT LIKE MINE","MIXED","MOST OF MY TIME FELT LIKE MINE","MY TIME LARGELY FELT LIKE MINE")
         "low_mood_load"->listOf("NOT LOW OR FLAT","A LITTLE LOW OR FLAT","NOTICEABLY LOW OR FLAT","VERY LOW OR FLAT","EXTREMELY LOW OR FLAT")
         else->listOf("TOO HIGH","ABOUT RIGHT","TOO LOW")
     }
     fun calibrate(algorithmId:String,target:CalibrationTarget,submissionId:String,feedback:String,note:String="",capacity:String?=null,sleepiness:String?=null)=action {
-        if(algorithmId in setOf("low_mood_load","life_balance")) {
+        if(algorithmId in setOf("low_mood_load","life_balance","life_balance_v2")) {
             val last=records.value.filter {it.kind=="CalibrationEvent"&&it.data().text("algorithmId")==algorithmId&&!it.data().flag("ignored")}.maxByOrNull {it.timestamp}
             require(last?.timestamp?.let {runCatching {java.time.Duration.between(java.time.Instant.parse(it),java.time.Instant.now()).toDays()>=6}.getOrDefault(true)}!=false){"Longitudinal calibration is weekly; a recent observation already covers this period."}
         }
         val structured=when(algorithmId) {"sleepiness"->sleepiness?.takeIf {it.isNotBlank()}?:feedback;else->capacity?.takeIf {it.isNotBlank()}?:feedback}
         var snapshot=withContext(Dispatchers.Default){calibrationSnapshot(records.value,target.score,target.confidence,target.jamesDayId)}
         snapshot=snapshot.changed("comparisonFeedback" to p(feedback),"primaryTarget" to p(JamesCalibrationCatalog.get(algorithmId)?.feedbackDimension?:""),"capacity" to (capacity?.let(::p)?:JsonNull),"sleepiness" to (sleepiness?.let(::p)?:JsonNull),"evidenceConfidence" to p("DIRECT_HIGH"))
-        if(algorithmId in setOf("low_mood_load","life_balance"))snapshot=snapshot.changed("feedbackWindowStart" to p(java.time.Instant.now().minus(java.time.Duration.ofDays(if(algorithmId=="life_balance")14 else 7)).toString()),"feedbackWindowEnd" to p(now()),"temporalAlignment" to p("LONGITUDINAL_RETROSPECTIVE"))
+        if(algorithmId in setOf("low_mood_load","life_balance","life_balance_v2"))snapshot=snapshot.changed("feedbackWindowStart" to p(java.time.Instant.now().minus(java.time.Duration.ofDays(if(algorithmId in setOf("life_balance","life_balance_v2"))14 else 7)).toString()),"feedbackWindowEnd" to p(now()),"temporalAlignment" to p("LONGITUDINAL_RETROSPECTIVE"))
         if(algorithmId=="low_mood_load") {
             val current=wellbeing.value.lowMood
             val evidence=uk.co.james.state.lowMoodEvidence(records.value,current)

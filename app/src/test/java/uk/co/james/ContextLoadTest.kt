@@ -77,4 +77,50 @@ class ContextLoadTest {
         val legacy=StoredRecord.from("loggedEvents",fields("id" to p("legacy"),"title" to p("Old pull"),"category" to p("INDEPENDENCE"),"points" to p(-100),"type" to p("negative"),"timestamp" to p(now.toString()),"createdAt" to p(now.toString()),"updatedAt" to p(now.toString()),"localDate" to p(now.toString().substring(0,10)) ))
         assertNull(lifeBalance(listOf(legacy),now).current.score)
     }
+    @Test fun balanceV2RequiresCoverageButDoesNotTreatUnknownAsNegative() {
+        val start=now.minus(Duration.ofHours(8))
+        val mostlyUnknown=listOf(
+            ownership("personal","AUTONOMOUS",start,start.plus(Duration.ofHours(2))),
+            ownership("unknown","UNKNOWN",start.plus(Duration.ofHours(2)),now)
+        )
+        val summary=lifeBalanceV2(mostlyUnknown,now)
+        assertNull(summary.days7.score)
+        assertEquals("LEARNING",summary.days7.evidenceState)
+        assertTrue(summary.days7.coveragePercent in 20..30)
+    }
+    @Test fun balanceV2UsesOwnershipNotPlaceActivityHealthOrLegacyRut() {
+        val facts=(0L..6L).flatMap { day->
+            val start=now.minus(Duration.ofDays(day)).minus(Duration.ofHours(9))
+            listOf(
+                ownership("personal-$day","AUTONOMOUS",start,start.plus(Duration.ofHours(5))),
+                ownership("constrained-$day","CONSTRAINED",start.plus(Duration.ofHours(5)),start.plus(Duration.ofHours(9)))
+            )
+        }
+        val unrelated=listOf(
+            record("LifeFactActivity",fields("title" to p("Gaming")),"game",now),
+            record("HealthMetric",fields("metric" to p("Recovery"),"value" to p(12)),"recovery",now),
+            StoredRecord.from("loggedEvents",fields("id" to p("rut"),"title" to p("Old pull"),"points" to p(-870),"type" to p("negative"),"timestamp" to p(now.toString()),"createdAt" to p(now.toString()),"updatedAt" to p(now.toString()),"localDate" to p(now.toString().substring(0,10))))
+        val baseline=lifeBalanceV2(facts,now).days7
+        val withUnrelated=lifeBalanceV2(facts+unrelated,now).days7
+        assertNotNull(baseline.score)
+        assertEquals(baseline.score,withUnrelated.score)
+        assertEquals(baseline.ownershipDistribution,withUnrelated.ownershipDistribution)
+    }
+    @Test fun balanceV2ShowsConstrainedTimeAndFragmentationWithoutDoubleCounting() {
+        val facts=(0L..6L).flatMap { day->
+            val start=now.minus(Duration.ofDays(day)).minus(Duration.ofHours(9))
+            listOf(
+                ownership("personal-$day","AUTONOMOUS",start,start.plus(Duration.ofHours(4))),
+                ownership("constrained-$day","CONSTRAINED",start.plus(Duration.ofHours(4)),start.plus(Duration.ofHours(9))),
+                record("VisitInterruption",fields("start" to p(start.plus(Duration.ofHours(1)).toString()),"end" to p(start.plus(Duration.ofMinutes(90)).toString())),"interrupt-$day",start.plus(Duration.ofHours(1)))
+            )
+        }
+        val balance=lifeBalanceV2(facts,now).days7
+        assertNotNull(balance.score)
+        assertEquals(1470,balance.autonomousMinutes)
+        assertEquals(2100,balance.constrainedMinutes)
+        assertEquals(7,balance.interruptions)
+        assertEquals(150,balance.longestAutonomousBlockMinutes)
+        assertTrue(balance.score!! < 50)
+    }
 }

@@ -81,7 +81,10 @@ import kotlin.math.abs
             val nutrition=nutritionToday(preparationRecords,day,clock)
             val right=rightNowSummary(preparationRecords,energyTimeSettings,clock)
             val context=currentContext(preparationRecords,clock)
-            val balance=lifeBalance(preparationRecords,clock)
+            // v1 remains calculated independently by StateEngine for its
+            // version-compatible Low Mood/Mental Reserve contribution. Today
+            // presents only the modern factual v2 interpretation.
+            val balance=lifeBalanceV2(preparationRecords,clock)
             val health=prepareWhoopOverview(preparationRecords,clock)
             val compact=prepareCompactToday(preparationRecords,clock,day,nutrition,right,wellbeing,health,context,balance,wearSignals,energyTimeSettings,history.hasUserHistory)
             TodayPrepared(personal,routines,routines.count {Habits.complete(personal,it.recordId,today())},day,
@@ -145,7 +148,7 @@ import kotlin.math.abs
     AdaptiveCards(cards,cardKeys)
 }
 
-internal data class TodayPrepared(val personal:List<JsonObject>,val routines:List<StoredRecord>,val done:Int,val day:JamesDayWindow,val moments:List<uk.co.james.timeline.Moment>,val nutrition:NutritionTodayUi,val rightNow:RightNowSummary,val context:ContextLoadSummary,val lifeBalance:LifeBalanceSummary,val healthOverview:WhoopOverviewSnapshot,val wearSignals:Map<String,StoredRecord>,val wellbeing:MentalWellbeingSummary,val compact:CompactTodayUi,val inputSignature:Int)
+internal data class TodayPrepared(val personal:List<JsonObject>,val routines:List<StoredRecord>,val done:Int,val day:JamesDayWindow,val moments:List<uk.co.james.timeline.Moment>,val nutrition:NutritionTodayUi,val rightNow:RightNowSummary,val context:ContextLoadSummary,val lifeBalance:LifeBalanceV2Summary,val healthOverview:WhoopOverviewSnapshot,val wearSignals:Map<String,StoredRecord>,val wellbeing:MentalWellbeingSummary,val compact:CompactTodayUi,val inputSignature:Int)
 private fun NutritionTodayUi.hasData()=listOf(calories,protein,carbs,fat,waterMl,caffeine).any {it!=null}
 
 @Composable private fun NutritionTodayCard(summary:NutritionTodayUi) {
@@ -374,7 +377,7 @@ private fun stressLevel(score:Double)=when {score<20->"Very low";score<40->"Low"
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){Button(onClick={vm.navigate("Routines")},modifier=Modifier.weight(1f)){Text("Routines")};Button(onClick={vm.navigate("Connections")},modifier=Modifier.weight(1f)){Text("Health")}}
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){OutlinedButton(onClick={vm.navigate("Location")},modifier=Modifier.weight(1f)){Text("Places")};OutlinedButton(onClick={vm.open("DailyReview",records.firstOrNull {it.kind=="DailyReview"&&it.localDate==today()})},modifier=Modifier.weight(1f)){Text("Journal")}}
         }},
-        {JamesCard("Your RUT journey",if(events.isEmpty())"History waiting to import"else Ledger.stage(Ledger.score(events))){Text(if(events.isEmpty())"Your existing history can be imported safely."else "Current journey score  ${Ledger.score(events)}",style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold);TextButton(onClick={vm.navigate("Life events")}){Text("Explore life events  →")}}},
+        {JamesCard("Legacy RUT history",if(events.isEmpty())"History waiting to import"else Ledger.stage(Ledger.score(events))){Text(if(events.isEmpty())"Your existing history can be imported safely."else "Historical ledger score  ${Ledger.score(events)}",style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold);Muted("Preserved legacy evidence; not current Life Balance.");TextButton(onClick={vm.navigate("Life events")}){Text("Open Legacy RUT history  →")}}},
         {JamesCard("Recent reflections","Context sensors cannot capture") {val reports=records.filter {it.kind in listOf("MoodEntry","DailyReview")}.sortedByDescending {it.timestamp}.take(5);if(reports.isEmpty())Muted("Nothing written yet. Journaling is optional.");reports.forEach {r->TextButton(onClick={vm.open(r.kind,r)},modifier=Modifier.fillMaxWidth()) {Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text(displayDate(r.localDate));Text(r.data().text("mood",r.kind),color=MaterialTheme.colorScheme.primary)}}}}}
     ))
 }
@@ -391,7 +394,7 @@ private fun stressLevel(score:Double)=when {score<20->"Very low";score<40->"Low"
     AdaptiveCards(listOf(
         {PageTitle("Your week");DateControl(date,vm::date);Text("${displayDate(start.toString())} — ${displayDate(end.toString())}")},
         {if(wellbeingSettings.enabled) MentalWellbeingCard(vm,wellbeing,wellbeingSettings.checkIns) else JamesCard("Mental wellbeing","Turned off"){Muted("Enable Mental wellbeing insights in Settings whenever you want.")}},
-        {JamesCard("Life events","${events.size} observations"){Text("${events.count {it.text("type")=="positive"}} wins · ${events.count {it.text("type")=="negative"}} Rut Pulls · ${events.count {it.text("type")=="recovery"}} recoveries");Text("Net change: ${Ledger.score(events)}");Muted("Blank days are unknown. Counts describe recorded events.");TextButton(onClick={vm.navigate("RUT Insights")}){Text("RUT patterns")}}},
+        {JamesCard("Legacy RUT events","${events.size} preserved observations"){Text("${events.count {it.text("type")=="positive"}} positive · ${events.count {it.text("type")=="negative"}} pulls · ${events.count {it.text("type")=="recovery"}} recoveries");Text("Historical net change: ${Ledger.score(events)}");Muted("Blank days are unknown. This ledger is not current Balance.");TextButton(onClick={vm.navigate("RUT Insights")}){Text("LEGACY RUT PATTERNS")}}},
         {JamesCard("Routines"){Text("${entries.count {it.kind=="RoutineCompletion"&&it.data().flag("completed")}} completions");TextButton(onClick={vm.navigate("Routines")}){Text("Streaks and missed days")}}},
         {JamesCard("Mood & energy"){entries.filter {it.kind=="MoodEntry"}.forEach {Text("${it.localDate} · ${it.data().text("mood")} · ${it.data().text("energy")}")};Muted("Personal reports, not inferred diagnoses.")}},
         {JamesCard("Highlights & problems"){entries.filter {it.kind=="DailyReview"}.forEach {r->Text(r.localDate);listOf("good","bad","important").forEach {key->r.data().text(key).takeIf {it.isNotBlank()}?.let {Text(it)}}};TextButton(onClick={vm.open("WeekReflection",records.firstOrNull {it.store=="metadata"&&it.recordId=="week-reflection:$start"})}){Text("Weekly reflection")}}},
@@ -601,18 +604,14 @@ private fun wellbeingReserveColour(value:Int)=when(value){in 0..19->Color(0xFFFF
         }
     }
 }
-@Composable private fun LifeBalanceCard(vm:JamesViewModel,summary:LifeBalanceSummary) {
+@Composable private fun LifeBalanceCard(vm:JamesViewModel,summary:LifeBalanceV2Summary) {
     val current=summary.current
-    JamesCard("Life Balance","${summary.trend} · ${summary.autonomy}") {
-        if(current.score==null) Muted("Not enough confirmed time ownership yet. Historical Rut entries remain unchanged.")
+    JamesCard("Life Balance",current.label) {
+        if(current.score==null) Muted("LEARNING · ${current.coveragePercent}% ownership coverage. Unknown is not a penalty.")
         else {
-            Text("Personal: ${current.personalMinutes/60}h ${current.personalMinutes%60}m · Work: ${current.workMinutes/60}h ${current.workMinutes%60}m")
-            Text("Obligation: ${current.obligationMinutes/60}h ${current.obligationMinutes%60}m · Constrained: ${current.constrainedMinutes/60}h ${current.constrainedMinutes%60}m")
-            if(summary.helping.isNotEmpty())Muted("Helping: ${summary.helping.joinToString(" · ")}")
-            if(summary.hurting.isNotEmpty())Muted("Hurting: ${summary.hurting.joinToString(" · ")}")
-        }
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-            listOf("Gym","Gaming","Walk").forEach {activity->OutlinedButton(onClick={vm.logLifeActivity(activity)},modifier=Modifier.weight(1f)){Text(activity,style=MaterialTheme.typography.labelSmall)}}
+            Text("${current.score}/100 · ${current.days}-day state")
+            Text("Personal: ${current.autonomousMinutes/60}h ${current.autonomousMinutes%60}m · Constrained: ${current.constrainedMinutes/60}h ${current.constrainedMinutes%60}m")
+            Muted("${current.coveragePercent}% ownership coverage · ${summary.trend}")
         }
         TextButton(onClick={vm.navigate("Life Balance")}){Text("DETAILS →")}
     }

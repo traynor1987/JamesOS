@@ -110,7 +110,7 @@ internal fun providerSyncStatus(stamp:String,now:Instant=Instant.now()):String {
         SensorSwitch("Time Pressure check-ins",current.timePressureCheckIns){v->save {it.copy(timePressureCheckIns=v)}}
         SensorSwitch("Use meal context",current.useMealContext){v->save {it.copy(useMealContext=v)}}
         SensorSwitch("Use caffeine context",current.useCaffeineContext){v->save {it.copy(useCaffeineContext=v)}}
-        SensorSwitch("Use Rut / personal time",current.usePersonalTime){v->save {it.copy(usePersonalTime=v)}}
+        SensorSwitch("Use Life Balance context",current.usePersonalTime){v->save {it.copy(usePersonalTime=v)}}
         SensorSwitch("Use physiological context",current.usePhysiology){v->save {it.copy(usePhysiology=v)}}
         SensorSwitch("Health Connect nutrition",current.nutritionEnabled){v->save {it.copy(nutritionEnabled=v)}}
         Muted("Enable nutrition, then choose its Health Connect permission under Connections. James OS uses logged meals as context—it does not infer glucose, metabolism or fasting.")
@@ -136,7 +136,7 @@ internal fun providerSyncStatus(stamp:String,now:Instant=Instant.now()):String {
         SensorSwitch("Use Wear sensors",current.wear){value->save {settings->settings.copy(wear=value)}}
         SensorSwitch("Use Samsung sensor readings",current.samsung){value->save {settings->settings.copy(samsung=value)}}
         TextButton(onClick={confirm=true}){Text("Reset personal baseline")}
-        Muted("Resetting removes only saved wellbeing summaries. It does not delete health, WHOOP, location, timeline, Rut or check-in history.")
+        Muted("Resetting removes only saved wellbeing summaries. It does not delete health, WHOOP, location, timeline, Legacy RUT or check-in history.")
     }
     if(confirm) AlertDialog(onDismissRequest={confirm=false},title={Text("Reset personal baseline?")},text={Text("James will learn again from your existing private history. No unrelated data is deleted.")},confirmButton={TextButton(onClick={vm.resetWellbeingBaseline();confirm=false}){Text("Reset")}},dismissButton={TextButton(onClick={confirm=false}){Text("Cancel")}})
 }

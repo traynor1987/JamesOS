@@ -11,36 +11,29 @@ import uk.co.james.database.StoredRecord
 import uk.co.james.state.*
 
 @Composable fun LifeBalanceScreen(vm:JamesViewModel,records:List<StoredRecord>) {
-    val balance=remember(records){lifeBalance(records)}
+    val balance=remember(records){lifeBalanceV2(records)}
     val cards=mutableListOf<@Composable ()->Unit>()
-    cards.add {PageTitle("Life Balance","ROLLING PERSONAL TRENDS · EXPERIMENTAL")}
-    cards.add {JamesCard("Life Balance",balance.trend+" · "+balance.autonomy) {
-        Text("James OS records facts and context periods. It does not recalculate historical Rut point records.",style=MaterialTheme.typography.bodySmall)
-        listOf(balance.days7,balance.days14,balance.days28).forEach {window->
+    cards.add {PageTitle("Life Balance","OWNERSHIP, AUTONOMY & CONTINUITY · v2")}
+    cards.add {JamesCard("Current Balance",balance.current.label) {
+        Text("Life Balance uses confirmed Time Ownership and interruptions. It does not score health, mood, places, activities or Legacy RUT.",style=MaterialTheme.typography.bodySmall)
+        Text("Primary: ${balance.current.days}-day window · ${balance.current.evidenceState}")
+        Text("Trend: ${balance.trend}")
+        TextButton(onClick={vm.navigate("Calibration:life_balance_v2")}){Text("HOW MUCH HAS MY TIME FELT LIKE MINE? →")}
+        listOf(balance.days7,balance.days28,balance.days90).forEach {window->
             HorizontalDivider(Modifier.padding(vertical=8.dp))
             Text(window.days.toString()+" DAYS",fontWeight=FontWeight.Black)
-            if(window.score==null)Muted("Not enough confirmed time ownership yet — unknown is not a penalty.")
+            if(window.score==null)Muted("LEARNING · ${window.coveragePercent}% observed ownership coverage. Unknown is not a penalty.")
             else {
-                Text("Personal: "+window.personalMinutes/60+"h "+window.personalMinutes%60+"m")
+                Text("${window.score}/100 · ${window.label}")
+                Text("Autonomous: "+window.autonomousMinutes/60+"h "+window.autonomousMinutes%60+"m")
                 Text("Work: "+window.workMinutes/60+"h "+window.workMinutes%60+"m")
-                Text("Obligation: "+window.obligationMinutes/60+"h "+window.obligationMinutes%60+"m · Constrained: "+window.constrainedMinutes/60+"h "+window.constrainedMinutes%60+"m")
+                Text("Committed: "+window.committedMinutes/60+"h "+window.committedMinutes%60+"m · Constrained: "+window.constrainedMinutes/60+"h "+window.constrainedMinutes%60+"m")
                 if(window.unknownMinutes>0)Muted("Unknown ownership: "+window.unknownMinutes/60+"h "+window.unknownMinutes%60+"m")
                 if(window.interruptions>0)Muted("Interruptions: "+window.interruptions+" · "+window.interruptionMinutes+"m · longest personal block "+window.longestAutonomousBlockMinutes+"m")
-                if(window.difficultMinutes>0)Text("Difficult context: "+window.difficultMinutes+"m")
-                if(window.positiveActivities>0)Muted("Activities logged: "+window.positiveActivities+" (not ownership evidence)")
+                Muted("Coverage: ${window.coveragePercent}% · facts are separate from direct James feedback.")
             }
         }
     }}
-    cards.add {JamesCard("Quick facts","WHAT HAPPENED?") {
-        listOf("Gym","Gaming","Cinema","Walk","Personal project","Went out").chunked(2).forEach {row->
-            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){row.forEach {fact->OutlinedButton(onClick={vm.logLifeActivity(fact)},modifier=Modifier.weight(1f)){Text(fact,style=MaterialTheme.typography.labelSmall)}}}
-        }
-    }}
-    cards.add {JamesCard("Difficult interaction","DISCREET FACT LOG") {
-        listOf("RAISED_VOICE","DISMISSED","CONTROLLING","ARGUMENT","INSULT_HOSTILITY","OTHER").chunked(2).forEach {row->
-            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){row.forEach {kind->OutlinedButton(onClick={vm.logDifficultInteraction(kind)},modifier=Modifier.weight(1f)){Text(kind.replace('_',' '),style=MaterialTheme.typography.labelSmall)}}}
-        }
-        Muted("Optional person/source is never required. This is personal context, not a claim about someone else.")
-    }}
+    cards.add {JamesCard("Legacy RUT history","HISTORICAL, NOT CURRENT BALANCE") {Muted("RUT was the predecessor to Life Balance. Its event-led score is preserved, but is not numerically equivalent to Balance v2.");TextButton(onClick={vm.navigate("Life events")}){Text("OPEN LEGACY RUT HISTORY →")}}}
     AdaptiveCards(cards)
 }
