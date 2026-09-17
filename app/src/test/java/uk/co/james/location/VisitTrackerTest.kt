@@ -1,1 +1,75 @@
-cGFja2FnZSB1ay5jby5qYW1lcy5sb2NhdGlvbgoKaW1wb3J0IGphdmEudGltZS5JbnN0YW50CmltcG9ydCBvcmcuanVuaXQuQXNzZXJ0LioKaW1wb3J0IG9yZy5qdW5pdC5UZXN0CgpjbGFzcyBWaXNpdFRyYWNrZXJUZXN0IHsKICAgIEBUZXN0IGZ1biBuZWFyYnlTYW1wbGVzU3RheUluT25lVmlzaXQoKSB7CiAgICAgICAgYXNzZXJ0VHJ1ZShzYW1lVmlzaXQoMTk5ZiwyMGYsMzBmKSkKICAgICAgICBhc3NlcnRGYWxzZShzYW1lVmlzaXQoMjUwZiwyMGYsMzBmKSkKICAgIH0KICAgIEBUZXN0IGZ1biBhY2N1cmFjeUV4cGFuZHNUaGVHcm91cGluZ1JhZGl1c1dpdGhvdXRNYWtpbmdUaW1lTmVnYXRpdmUoKSB7CiAgICAgICAgYXNzZXJ0VHJ1ZShzYW1lVmlzaXQoMzAwZiwxODBmLDMwZikpCiAgICAgICAgdmFsIHN0YXJ0PUluc3RhbnQucGFyc2UoIjIwMjYtMDktMTBUMTA6MDA6MDBaIikKICAgICAgICBhc3NlcnRFcXVhbHMoMTUsdmlzaXRNaW51dGVzKHN0YXJ0LEluc3RhbnQucGFyc2UoIjIwMjYtMDktMTBUMTA6MTU6NTlaIikpKQogICAgICAgIGFzc2VydEVxdWFscygwLHZpc2l0TWludXRlcyhzdGFydCxJbnN0YW50LnBhcnNlKCIyMDI2LTA5LTEwVDA5OjU5OjAwWiIpKSkKICAgIH0KICAgIEBUZXN0IGZ1biBvbmx5X3N0b3BzX29mX2ZpdmVfbWludXRlc19hcmVfY29tcGxldGVkKCkgewogICAgICAgIGFzc2VydEZhbHNlKGNvbXBsZXRlZFZpc2l0KDQpKQogICAgICAgIGFzc2VydFRydWUoY29tcGxldGVkVmlzaXQoNSkpCiAgICB9CiAgICBAVGVzdCBmdW4gaG9tZV9hbmRfbm9fb2JsaWdhdGlvbl9yZW1haW5fdW5rbm93bl91bnRpbF9qYW1lc19jb3JyZWN0c190aGVtKCkgewogICAgICAgIGFzc2VydEVxdWFscyhUaW1lT3duZXJzaGlwLlVOS05PV04saW5mZXJyZWRPd25lcnNoaXAoKSkKICAgIH0KICAgIEBUZXN0IGZ1biBqaXR0ZXJfZG9lc19ub3RfY2xvc2VfYW5fb3Blbl92aXNpdF9idXRfYV9zdXN0YWluZWRfZGVwYXJ0dXJlX2RvZXMoKSB7CiAgICAgICAgdmFsIGxhc3Q9SW5zdGFudC5wYXJzZSgiMjAyNi0wOS0xMFQxMDowMDowMFoiKQogICAgICAgIGFzc2VydEZhbHNlKHNob3VsZENsb3NlQW5jaG9yKGxhc3QsSW5zdGFudC5wYXJzZSgiMjAyNi0wOS0xMFQxMDowNTowMFoiKSxmYWxzZSkpCiAgICAgICAgYXNzZXJ0VHJ1ZShzaG91bGRDbG9zZUFuY2hvcihsYXN0LEluc3RhbnQucGFyc2UoIjIwMjYtMDktMTBUMTA6MTE6MDBaIiksZmFsc2UpKQogICAgfQogICAgQFRlc3QgZnVuIG9uZV9pbml0aWFsX2FuZF9vbmVfZml2ZV9taW51dGVfZml4X2FyZV9lbm91Z2hfdG9fYWN0aXZhdGVfYV92aXNpdCgpIHsKICAgICAgICB2YWwgc3RhcnQ9SW5zdGFudC5wYXJzZSgiMjAyNi0wOS0xMFQxMDowMDowMFoiKQogICAgICAgIGFzc2VydFRydWUoY29tcGxldGVkVmlzaXQodmlzaXRNaW51dGVzKHN0YXJ0LEluc3RhbnQucGFyc2UoIjIwMjYtMDktMTBUMTA6MDU6MDBaIikpKSkKICAgIH0KICAgIEBUZXN0IGZ1biBvdmVybGFwcGluZ19wbGFjZXNfY2hvb3NlX3RoZV9jbG9zZXN0X2VsaWdpYmxlX2JvdW5kYXJ5KCkgewogICAgICAgIHZhbCBmYXI9UGxhY2VNYXRjaCgiYSIsIkEiLCJIb21lIiwxMjBmLDEwMGYpCiAgICAgICAgdmFsIG5lYXI9UGxhY2VNYXRjaCgiYiIsIkIiLCJXb3JrIiw1MGYsMTAwZikKICAgICAgICBhc3NlcnRFcXVhbHMoImIiLGNob29zZVBsYWNlKGxpc3RPZihmYXIsbmVhcikpPy5pZCkKICAgIH0KCiAgICBAVGVzdCBmdW4gb25lX3N0cm9uZ19zcGF0aWFsX2hvbWVfbWF0Y2hfaXNfY29uZmlybWVkX2V2ZW5fd2hlbl9vd25lcnNoaXBfaXNfdW5rbm93bigpIHsKICAgICAgICB2YWwgcmVzdWx0PXJlc29sdmVQbGFjZU1hdGNoKAogICAgICAgICAgICBtYXRjaGVzPWxpc3RPZihQbGFjZU1hdGNoKCJob21lIiwiSG9tZSIsIkhvbWUiLDRmLDE1MGYpKSwKICAgICAgICAgICAgYWNjdXJhY3lNZXRyZXM9NGYKICAgICAgICApCgogICAgICAgIGFzc2VydEVxdWFscygiaG9tZSIscmVzdWx0LnBsYWNlPy5pZCkKICAgICAgICBhc3NlcnRFcXVhbHMoUGxhY2VNYXRjaENvbmZpZGVuY2UuQ09ORklSTUVELHJlc3VsdC5jb25maWRlbmNlKQogICAgICAgIGFzc2VydEVxdWFscyhUaW1lT3duZXJzaGlwLlVOS05PV04saW5mZXJyZWRPd25lcnNoaXAoKSkKICAgIH0KCiAgICBAVGVzdCBmdW4gbWF0ZXJpYWxseV9vdmVybGFwcGluZ19zYXZlZF9wbGFjZXNfc3RheV9hbWJpZ3VvdXMoKSB7CiAgICAgICAgdmFsIHJlc3VsdD1yZXNvbHZlUGxhY2VNYXRjaCgKICAgICAgICAgICAgbWF0Y2hlcz1saXN0T2YoCiAgICAgICAgICAgICAgICBQbGFjZU1hdGNoKCJob21lIiwiSG9tZSIsIkhvbWUiLDE0Ziw4MGYpLAogICAgICAgICAgICAgICAgUGxhY2VNYXRjaCgiZmFtaWx5IiwiRmFtaWx5IGhvdXNlIiwiRmFtaWx5IiwxNmYsODBmKQogICAgICAgICAgICApLAogICAgICAgICAgICBhY2N1cmFjeU1ldHJlcz04ZgogICAgICAgICkKCiAgICAgICAgYXNzZXJ0RXF1YWxzKFBsYWNlTWF0Y2hDb25maWRlbmNlLkFNQklHVU9VUyxyZXN1bHQuY29uZmlkZW5jZSkKICAgICAgICBhc3NlcnRFcXVhbHMobnVsbCxyZXN1bHQucGxhY2UpCiAgICB9CgogICAgQFRlc3QgZnVuIGdlb2ZlbmNlX2Fycml2YWxfcmVwbGFjZXNfYV9kaWZmZXJlbnRfYWN0aXZlX3BsYWNlX2J1dF9pZ25vcmVzX2FfbGF0ZV9leGl0X2Zvcl90aGVfb2xkX3BsYWNlKCkgewogICAgICAgIGFzc2VydFRydWUoc2hvdWxkU3RhcnRHZW9mZW5jZUFuY2hvcihhY3RpdmVQbGFjZUlkPSJzaXN0ZXIiLGV2ZW50UGxhY2VJZD0iaG9tZSIsZW50ZXJpbmc9dHJ1ZSkpCiAgICAgICAgYXNzZXJ0RmFsc2Uoc2hvdWxkQ2xvc2VHZW9mZW5jZUFuY2hvcihhY3RpdmVQbGFjZUlkPSJob21lIixldmVudFBsYWNlSWQ9InNpc3RlciIsZW50ZXJpbmc9ZmFsc2UpKQogICAgICAgIGFzc2VydFRydWUoc2hvdWxkQ2xvc2VHZW9mZW5jZUFuY2hvcihhY3RpdmVQbGFjZUlkPSJob21lIixldmVudFBsYWNlSWQ9ImhvbWUiLGVudGVyaW5nPWZhbHNlKSkKICAgIH0KCiAgICBAVGVzdCBmdW4gc2l4X2RheV9vbGRfcGFzc2l2ZV9maXhfaXNfbm90X2N1cnJlbnRfcGxhY2VfZXZpZGVuY2UoKSB7CiAgICAgICAgdmFsIG5vdz1JbnN0YW50LnBhcnNlKCIyMDI2LTA5LTE3VDIxOjAyOjAwWiIpCiAgICAgICAgYXNzZXJ0RmFsc2UoaXNGcmVzaFBhc3NpdmVGaXgobm93Lm1pbnVzU2Vjb25kcyg5MTUwTCo2MCksbm93KSkKICAgICAgICBhc3NlcnRUcnVlKGlzRnJlc2hQYXNzaXZlRml4KG5vdy5taW51c1NlY29uZHMoNSo2MCksbm93KSkKICAgIH0KfQo=
+package uk.co.james.location
+
+import java.time.Instant
+import org.junit.Assert.*
+import org.junit.Test
+
+class VisitTrackerTest {
+    @Test fun nearbySamplesStayInOneVisit() {
+        assertTrue(sameVisit(199f,20f,30f))
+        assertFalse(sameVisit(250f,20f,30f))
+    }
+    @Test fun accuracyExpandsTheGroupingRadiusWithoutMakingTimeNegative() {
+        assertTrue(sameVisit(300f,180f,30f))
+        val start=Instant.parse("2026-09-10T10:00:00Z")
+        assertEquals(15,visitMinutes(start,Instant.parse("2026-09-10T10:15:59Z")))
+        assertEquals(0,visitMinutes(start,Instant.parse("2026-09-10T09:59:00Z")))
+    }
+    @Test fun only_stops_of_five_minutes_are_completed() {
+        assertFalse(completedVisit(4))
+        assertTrue(completedVisit(5))
+    }
+    @Test fun home_and_no_obligation_remain_unknown_until_james_corrects_them() {
+        assertEquals(TimeOwnership.UNKNOWN,inferredOwnership())
+    }
+    @Test fun jitter_does_not_close_an_open_visit_but_a_sustained_departure_does() {
+        val last=Instant.parse("2026-09-10T10:00:00Z")
+        assertFalse(shouldCloseAnchor(last,Instant.parse("2026-09-10T10:05:00Z"),false))
+        assertTrue(shouldCloseAnchor(last,Instant.parse("2026-09-10T10:11:00Z"),false))
+    }
+    @Test fun one_initial_and_one_five_minute_fix_are_enough_to_activate_a_visit() {
+        val start=Instant.parse("2026-09-10T10:00:00Z")
+        assertTrue(completedVisit(visitMinutes(start,Instant.parse("2026-09-10T10:05:00Z"))))
+    }
+    @Test fun overlapping_places_choose_the_closest_eligible_boundary() {
+        val far=PlaceMatch("a","A","Home",120f,100f)
+        val near=PlaceMatch("b","B","Work",50f,100f)
+        assertEquals("b",choosePlace(listOf(far,near))?.id)
+    }
+
+    @Test fun one_strong_spatial_home_match_is_confirmed_even_when_ownership_is_unknown() {
+        val result=resolvePlaceMatch(
+            matches=listOf(PlaceMatch("home","Home","Home",4f,150f)),
+            accuracyMetres=4f
+        )
+
+        assertEquals("home",result.place?.id)
+        assertEquals(PlaceMatchConfidence.CONFIRMED,result.confidence)
+        assertEquals(TimeOwnership.UNKNOWN,inferredOwnership())
+    }
+
+    @Test fun materially_overlapping_saved_places_stay_ambiguous() {
+        val result=resolvePlaceMatch(
+            matches=listOf(
+                PlaceMatch("home","Home","Home",14f,80f),
+                PlaceMatch("family","Family house","Family",16f,80f)
+            ),
+            accuracyMetres=8f
+        )
+
+        assertEquals(PlaceMatchConfidence.AMBIGUOUS,result.confidence)
+        assertEquals(null,result.place)
+    }
+
+    @Test fun geofence_arrival_replaces_a_different_active_place_but_ignores_a_late_exit_for_the_old_place() {
+        assertTrue(shouldStartGeofenceAnchor(activePlaceId="sister",eventPlaceId="home",entering=true))
+        assertFalse(shouldCloseGeofenceAnchor(activePlaceId="home",eventPlaceId="sister",entering=false))
+        assertTrue(shouldCloseGeofenceAnchor(activePlaceId="home",eventPlaceId="home",entering=false))
+    }
+
+    @Test fun six_day_old_passive_fix_is_not_current_place_evidence() {
+        val now=Instant.parse("2026-09-17T21:02:00Z")
+        assertFalse(isFreshPassiveFix(now.minusSeconds(9150L*60),now))
+        assertTrue(isFreshPassiveFix(now.minusSeconds(5*60),now))
+    }
+}
