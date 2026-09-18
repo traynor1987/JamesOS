@@ -164,7 +164,7 @@ private fun CalibrationAlgorithm(vm:JamesViewModel,rows:List<uk.co.james.databas
                     Text("Validation MAE: "+test.number("currentMae")+" → "+test.number("candidateMae"))
                     Text("Validation bias (prediction − James): "+String.format(java.util.Locale.UK,"%+.1f",test.number("currentBias"))+" → "+String.format(java.util.Locale.UK,"%+.1f",test.number("candidateBias")))
                     Text("Expected improvement: "+String.format(java.util.Locale.UK,"%.1f",test.number("improvementPercent"))+"%")
-                    validationDetail(test)?.let(::Muted)
+                    validationDetail(test)?.let {detail->Muted(detail)}
                     if(test.array("regressions").isNotEmpty())test.array("regressions").forEach {Muted("Regression: "+it.jsonPrimitive.content)}
                 }
                 if(d.text("status")=="TESTED")Button(onClick={activate=candidate}){Text("ACTIVATE")}

@@ -437,7 +437,11 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
         val target=when(algorithmId) {
             "body_battery"->bodyBattery(rows).let {b->b.value?.let {CalibrationTarget(it,b.confidence,b.trace?.jamesDayId,b.algorithmVersion,b.calibrationVersion,b.calibrationSetId.orEmpty())}}
             "live_energy"->right?.liveEnergy?.let {CalibrationTarget(it.score,it.confidence,right.jamesDay.id,it.algorithmVersion,it.calibrationVersion,it.calibrationSetId)}
-            "sleepiness"->right?.sleepiness?.let {CalibrationTarget(it.score,it.confidence,right.jamesDay.id,it.algorithmVersion,it.calibrationVersion,it.calibrationSetId,it.rawExpressedSleepiness,it.calibrationApplied)}
+            "sleepiness"->right?.let {summary->
+                val metric=summary.sleepiness
+                val details=summary.sleepinessDetails
+                CalibrationTarget(metric.score,metric.confidence,summary.jamesDay.id,metric.algorithmVersion,metric.calibrationVersion,metric.calibrationSetId,details.rawExpressedSleepiness,details.calibrationApplied)
+            }
             "energy_sustainability"->right?.sustainability?.let {CalibrationTarget(it.score,it.confidence,right.jamesDay.id,it.algorithmVersion,it.calibrationVersion,it.calibrationSetId)}
             "crash_risk"->right?.crashRisk?.let {CalibrationTarget(it.score,it.confidence,right.jamesDay.id,it.algorithmVersion,it.calibrationVersion,it.calibrationSetId)}
             "time_pressure"->right?.timePressure?.let {CalibrationTarget(it.score,it.confidence,right.jamesDay.id,it.algorithmVersion,it.calibrationVersion,it.calibrationSetId)}
