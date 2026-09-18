@@ -84,6 +84,14 @@ Tests cover Compact-default persistence and explicit Classic persistence, contra
 
 ## James Sleepiness / Sleep Pressure
 
+### Sleepiness calibration validation and diagnostics (2026-09-18)
+
+Sleepiness calibration continues to treat James's direct rating as the ground truth for subjective sleepiness; WHOOP Recovery, sleep duration, Body Battery, Live Energy and other related measures remain separate inputs or separate models, not substitutes for that rating. Calibration error/bias is explicitly **prediction minus James's observed rating**. A negative bias therefore means James OS has typically predicted too low; a positive bias means it has typically predicted too high. Calibration Lab now translates that sign into plain language while retaining the signed value for diagnostics.
+
+The prior combined message `Validation limited or regression detected` has been removed. The deterministic 80/20 holdout decision now persists and displays one exact state: `VALIDATION_LIMITED` (fewer than 25 total eligible observations / fewer than five held-out observations), `REGRESSION_DETECTED` (a protected prediction-range or context slice worsened), `NO_VALIDATED_IMPROVEMENT`, or `ACCEPTED`. The screen exposes held-out count, minimum requirement, baseline/candidate validation MAE, expected improvement and any slice regressions. At 20 observations, the normal split yields 16 training and 4 held-out observations, so an otherwise viable candidate stays a draft because validation is limited—not because a nightly value was changed or a candidate silently applied.
+
+Sleepiness diagnostics now distinguish **current production prediction** from **raw model prediction**. The production score is the only value used by Today and calibration observations; raw is shown alongside it so James can see whether an accepted active calibration is currently contributing. No draft/rejected candidate is applied. The raw and calibrated outputs remain bounded 0–100, existing historical events/profiles remain versioned and compatible under the existing validation rules, and no source record, Body Battery value or historical score is rewritten.
+
 Sleepiness Algorithm v1.0.0 with Calibration v1.0.0 is a first-class experimental 0–100 metric where 0 means no meaningful Sleepiness and 100 means extreme Sleepiness/struggling to stay awake. It estimates current propensity or drive to sleep; it does not claim to measure adenosine, hypersomnolence or impairment and is not a diagnosis.
 
 Sleepiness remains explicitly separate from Body Battery (underlying physical capacity), Live Energy (current energetic/alert state) and Mental Reserve (available mental capacity). High Energy with high Sleepiness, or low Body Battery with low Sleepiness, are valid states. Body Battery is not inverted or tuned to make the scores agree.

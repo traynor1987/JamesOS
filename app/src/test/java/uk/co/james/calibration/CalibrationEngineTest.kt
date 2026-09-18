@@ -49,6 +49,53 @@ class CalibrationEngineTest {
         assertEquals(CandidateStatus.DRAFT,candidate.status)
         assertNotNull(JamesCalibrationEngine.backTest(events,candidate))
     }
+    @Test fun biasInterpretationExplainsNegativePredictionMinusObservedAsTooLow() {
+        val interpretation=JamesCalibrationEngine.biasInterpretation(-16.5)!!
+        assertEquals(BiasDirection.TOO_LOW,interpretation.direction)
+        assertEquals(16.5,interpretation.points,0.001)
+    }
+    @Test fun biasInterpretationExplainsPositivePredictionMinusObservedAsTooHigh() {
+        val interpretation=JamesCalibrationEngine.biasInterpretation(12.0)!!
+        assertEquals(BiasDirection.TOO_HIGH,interpretation.direction)
+        assertEquals(12.0,interpretation.points,0.001)
+    }
+    @Test fun biasInterpretationTreatsNearZeroAsAligned() {
+        assertEquals(BiasDirection.ALIGNED,JamesCalibrationEngine.biasInterpretation(1.9)!!.direction)
+        assertNull(JamesCalibrationEngine.biasInterpretation(null))
+    }
+    @Test fun validationDecisionSeparatesLimitedEvidenceFromRegressionAndAcceptance() {
+        val limited=BackTestResult(16,4,20.0,16.0,-20.0,-16.0,20.0,emptyList(),false)
+        assertEquals(CalibrationValidationState.VALIDATION_LIMITED,JamesCalibrationEngine.validationDecision(limited).state)
+
+        val regression=BackTestResult(20,5,15.0,17.0,-2.0,2.0,-13.3,listOf("50-79 worsens by more than 2 points"),true)
+        assertEquals(CalibrationValidationState.REGRESSION_DETECTED,JamesCalibrationEngine.validationDecision(regression).state)
+
+        val accepted=BackTestResult(20,5,20.0,16.0,-20.0,-16.0,20.0,emptyList(),true)
+        assertEquals(CalibrationValidationState.ACCEPTED,JamesCalibrationEngine.validationDecision(accepted).state)
+    }
+    @Test fun validationDecisionRejectsCandidateWithoutMeasuredImprovement() {
+        val result=BackTestResult(20,5,16.0,16.0,-3.0,-3.0,0.0,emptyList(),true)
+        assertEquals(CalibrationValidationState.NO_VALIDATED_IMPROVEMENT,JamesCalibrationEngine.validationDecision(result).state)
+    }
+    @Test fun incompatibleHistoricalObservationsArePreservedButExcludedFromNewCandidates() {
+        val compatible=(0 until 20).map {index->
+            val stamp=Instant.parse("2026-02-"+(index+1).toString().padStart(2,'0')+"T12:00:00Z")
+            JamesCalibrationEngine.parse(row(JamesCalibrationEngine.event("sleepiness",if(index%2==0)30.0 else 60.0,"STRUGGLING TO STAY AWAKE",JamesAlgorithmRegistry.SLEEPINESS_VERSION,JamesAlgorithmRegistry.SLEEPINESS_CALIBRATION,"day-$index",snapshot(),timestamp=stamp)))!!
+        }
+        val historical=compatible.first().copy(id="legacy-incompatible",algorithmVersion="sleepiness-legacy",prediction=95.0,observed=0.0,error=95.0,absoluteError=95.0)
+        val first=JamesCalibrationEngine.candidate(compatible,"sleepiness","1.0.0",clock=Instant.parse("2026-03-01T00:00:00Z"))!!
+        val second=JamesCalibrationEngine.candidate(compatible+historical,"sleepiness","1.0.0",clock=Instant.parse("2026-03-01T00:00:00Z"))!!
+        assertEquals(first.datasetHash,second.datasetHash)
+        assertEquals(first.parameters,second.parameters)
+    }
+    @Test fun backtestRecordPersistsTheSpecificValidationDecision() {
+        val candidate=CandidateCalibration("candidate-validation","sleepiness",JamesAlgorithmRegistry.SLEEPINESS_VERSION,JamesAlgorithmRegistry.SLEEPINESS_CALIBRATION,mapOf("outputBias" to 4.0),"Synthetic",emptyList(),Instant.parse("2026-03-01T00:00:00Z"),CandidateCreator.CALIBRATION_ENGINE,CandidateStatus.DRAFT)
+        val result=BackTestResult(16,4,20.0,16.0,-20.0,-16.0,20.0,emptyList(),false)
+        val record=JamesCalibrationEngine.backtestRecord(candidate,result).obj("data")
+        assertEquals("VALIDATION_LIMITED",record.text("validationState"))
+        assertEquals(5.0,record.number("minimumValidationObservations"),0.001)
+        assertTrue(record.text("validationDetail").contains("4 of 5"))
+    }
     @Test fun adaptersPreserveLoadDirections() {
         assertEquals(0.0,JamesCalibrationEngine.normalizeObserved("anxiety_load","VERY LOW")!!,0.001)
         assertEquals(75.0,JamesCalibrationEngine.normalizeObserved("anxiety_load","HIGH")!!,0.001)

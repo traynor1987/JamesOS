@@ -14,6 +14,8 @@ enum class CalibrationParameterType { DOUBLE, INTEGER, PERCENTAGE, MULTIPLIER }
 enum class CalibrationParameterSource { DEFAULT, MANUAL, CALIBRATION_ENGINE, NOVA_PROPOSAL, RESTORED }
 enum class CalibrationQuality { NOT_ENOUGH_DATA, EARLY, DEVELOPING, GOOD, STRONG }
 enum class ErrorDirection { OVERESTIMATED, UNDERESTIMATED, MATCHED }
+enum class BiasDirection { TOO_LOW, TOO_HIGH, ALIGNED }
+enum class CalibrationValidationState { ACCEPTED, VALIDATION_LIMITED, REGRESSION_DETECTED, NO_VALIDATED_IMPROVEMENT }
 enum class CandidateCreator { CALIBRATION_ENGINE, NOVA, MANUAL }
 enum class CandidateStatus { DRAFT, TESTED, APPROVED, REJECTED, ACTIVE, ROLLED_BACK, STALE }
 
@@ -37,8 +39,10 @@ class StoredPredictionRunner(override val algorithmId:String,override val algori
 data class CalibrationObservation(val id:String,val algorithmId:String,val algorithmVersion:String,val calibrationVersion:String,val timestamp:Instant,val jamesDayId:String?,val prediction:Double,val observed:Double,val error:Double,val absoluteError:Double,val direction:ErrorDirection,val feedback:String,val contextTags:Set<String>,val snapshot:JsonObject,val calibrationSetId:String="",val evidenceConfidence:String="HIGH",val ignored:Boolean=false)
 data class CalibrationSlice(val name:String,val count:Int,val meanError:Double,val meanAbsoluteError:Double)
 data class CalibrationMetrics(val count:Int,val meanError:Double?,val meanAbsoluteError:Double?,val medianAbsoluteError:Double?,val recencyWeightedMae:Double?,val quality:CalibrationQuality,val scoreRanges:List<CalibrationSlice>,val contexts:List<CalibrationSlice>,val newestAt:Instant?)
+data class BiasInterpretation(val direction:BiasDirection,val points:Double,val description:String)
 data class CandidateCalibration(val id:String,val algorithmId:String,val algorithmVersion:String,val baseCalibrationVersion:String,val parameters:Map<String,Double>,val reason:String,val evidenceIds:List<String>,val createdAt:Instant,val createdBy:CandidateCreator,val status:CandidateStatus,val calibrationSchemaVersion:String="calibration-schema-v1",val engineVersion:String=JamesCalibrationEngine.VERSION,val baseParameters:Map<String,Double> = emptyMap(),val baseCalibrationSetId:String="",val datasetHash:String="",val dependencyVersions:Map<String,String> = emptyMap())
 data class BackTestResult(val trainCount:Int,val validationCount:Int,val currentMae:Double?,val candidateMae:Double?,val currentBias:Double?,val candidateBias:Double?,val improvementPercent:Double?,val regressions:List<String>,val robustValidation:Boolean,val currentTrainMae:Double?=null,val candidateTrainMae:Double?=null,val replayMethod:String="STORED_INPUT_SNAPSHOT")
+data class CalibrationValidationDecision(val state:CalibrationValidationState,val detail:String,val minimumValidationObservations:Int)
 data class ActiveCalibration(val version:String,val setId:String,val parameters:Map<String,Double>,val source:CalibrationParameterSource)
 
 private val outputBias=CalibrationParameterDefinition("outputBias","Output bias","Bounded final correction after the deterministic algorithm. Raw inputs remain immutable.",0.0,-12.0,12.0,CalibrationParameterType.DOUBLE)
@@ -79,6 +83,8 @@ object JamesCalibrationCatalog {
 
 object JamesCalibrationEngine {
     const val VERSION="1.0.3"
+    const val MINIMUM_ROBUST_TOTAL_OBSERVATIONS=25
+    const val MINIMUM_HELD_OUT_VALIDATION_OBSERVATIONS=5
     private val scoreBands=listOf(0..19,20..49,50..79,80..100)
     private fun ordinal(label:String)=when(label.trim().uppercase()) {
         "EMPTY","GONE","NONE","NOT AT ALL","VERY LOW","KNACKERED","BRAIN GONE","NO ENERGY","DEFINITELY NOT"->0.0
@@ -104,6 +110,38 @@ object JamesCalibrationEngine {
         val raw=comparison?:sleepinessOrdinal?:lowMoodDirect?:balanceDirect?:ordinal(upper)?:return null
         val reversed=algorithmId=="low_mood_load"&&upper in setOf("VERY LOW","LOW","OKAY","GOOD","VERY GOOD","GREAT")
         return (sleepinessOrdinal?:lowMoodDirect?:balanceDirect?:if(reversed)100.0-raw else raw).coerceIn(0.0,100.0)
+    }
+    /** Error is prediction minus James's direct observed rating. */
+    fun biasInterpretation(meanError:Double?):BiasInterpretation? {
+        val error=meanError?.takeIf(Double::isFinite)?:return null
+        val points=abs(error)
+        return when {
+            error < -2.0 -> BiasInterpretation(BiasDirection.TOO_LOW,points,"Typically predicts "+String.format(java.util.Locale.UK,"%.1f",points)+" points too low.")
+            error > 2.0 -> BiasInterpretation(BiasDirection.TOO_HIGH,points,"Typically predicts "+String.format(java.util.Locale.UK,"%.1f",points)+" points too high.")
+            else -> BiasInterpretation(BiasDirection.ALIGNED,points,"Typically matches James's direct feedback.")
+        }
+    }
+    fun validationDecision(result:BackTestResult):CalibrationValidationDecision = when {
+        !result.robustValidation -> CalibrationValidationDecision(
+            CalibrationValidationState.VALIDATION_LIMITED,
+            "Held-out validation is limited: "+result.validationCount+" of "+MINIMUM_HELD_OUT_VALIDATION_OBSERVATIONS+" required observations ("+(result.trainCount+result.validationCount)+" of "+MINIMUM_ROBUST_TOTAL_OBSERVATIONS+" total).",
+            MINIMUM_HELD_OUT_VALIDATION_OBSERVATIONS
+        )
+        result.regressions.isNotEmpty() -> CalibrationValidationDecision(
+            CalibrationValidationState.REGRESSION_DETECTED,
+            "Candidate worsened one or more protected validation slices.",
+            MINIMUM_HELD_OUT_VALIDATION_OBSERVATIONS
+        )
+        (result.improvementPercent?:0.0)<=0.0 -> CalibrationValidationDecision(
+            CalibrationValidationState.NO_VALIDATED_IMPROVEMENT,
+            "Candidate did not improve held-out validation error.",
+            MINIMUM_HELD_OUT_VALIDATION_OBSERVATIONS
+        )
+        else -> CalibrationValidationDecision(
+            CalibrationValidationState.ACCEPTED,
+            "Candidate improved held-out validation without protected-slice regressions.",
+            MINIMUM_HELD_OUT_VALIDATION_OBSERVATIONS
+        )
     }
     fun event(algorithmId:String,prediction:Double,feedback:String,algorithmVersion:String,calibrationVersion:String,jamesDayId:String?,snapshot:JsonObject,note:String="",evidenceSource:String="DIRECT",sourceEventId:String?=null,timestamp:Instant=Instant.now(),calibrationSetId:String="",evidenceConfidence:String=if(evidenceSource=="DIRECT")"HIGH" else "MODERATE",recordId:String?=null):JsonObject {
         require(JamesCalibrationCatalog.get(algorithmId)?.supportsCalibration==true){"This algorithm does not support calibration."}
@@ -158,9 +196,14 @@ object JamesCalibrationEngine {
         val entry=JamesAlgorithmRegistry.get(dependency)
         if(entry==null)"UNAVAILABLE" else activeCalibration(rows,dependency,entry.calibrationVersion,entry.algorithmVersion).let {it.version+"@"+it.setId}
     }
+    /** Historical observations remain visible, but candidates only train on compatible predictor versions. */
+    fun compatibleEvidence(events:List<CalibrationObservation>,algorithmId:String):List<CalibrationObservation> {
+        val compatible=JamesAlgorithmRegistry.get(algorithmId)?.calibrationCompatibleAlgorithmVersions?:return emptyList()
+        return events.filter {!it.ignored&&it.algorithmId==algorithmId&&it.algorithmVersion in compatible}
+    }
     fun candidate(events:List<CalibrationObservation>,algorithmId:String,baseVersion:String,baseParameters:Map<String,Double> = emptyMap(),clock:Instant=Instant.now(),baseCalibrationSetId:String="",dependencyVersions:Map<String,String> = emptyMap()):CandidateCalibration? {
         val registration=JamesCalibrationCatalog.get(algorithmId)?:return null
-        val usable=events.filter {!it.ignored&&it.algorithmId==algorithmId}
+        val usable=compatibleEvidence(events,algorithmId)
         val coveredBands=scoreBands.count {band->usable.count {it.prediction.roundToInt() in band}>=3}
         if(!registration.automaticCandidates||usable.size<registration.minimumEvidence||coveredBands<2)return null
         val ordered=usable.sortedBy {it.timestamp};val train=ordered.filterIndexed {i,_->i%5!=4};val bias=train.map {it.error}.average()
@@ -177,9 +220,11 @@ object JamesCalibrationEngine {
         val current=mae(validation,0.0);val proposed=mae(validation,bias)
         val rangeRegressions=scoreBands.mapNotNull {band->val rows=validation.filter {it.prediction.roundToInt() in band};if(rows.size>=3&&(mae(rows,bias)?:0.0)>(mae(rows,0.0)?:0.0)+2.0)band.first.toString()+"-"+band.last+" worsens by more than 2 points"else null}
         val contextRegressions=validation.flatMap {it.contextTags}.distinct().mapNotNull {tag->val rows=validation.filter {tag in it.contextTags};if(rows.size>=3&&(mae(rows,bias)?:0.0)>(mae(rows,0.0)?:0.0)+2.0)"$tag context worsens by more than 2 points" else null}
-        return BackTestResult(train.size,validation.size,current,proposed,signed(validation,0.0),signed(validation,bias),if(current!=null&&proposed!=null&&current>0)(current-proposed)/current*100 else null,rangeRegressions+contextRegressions,events.size>=25&&validation.size>=5,mae(train,0.0),mae(train,bias))
+        return BackTestResult(train.size,validation.size,current,proposed,signed(validation,0.0),signed(validation,bias),if(current!=null&&proposed!=null&&current>0)(current-proposed)/current*100 else null,rangeRegressions+contextRegressions,events.size>=MINIMUM_ROBUST_TOTAL_OBSERVATIONS&&validation.size>=MINIMUM_HELD_OUT_VALIDATION_OBSERVATIONS,mae(train,0.0),mae(train,bias))
     }
-    fun backtestRecord(candidate:CandidateCalibration,result:BackTestResult)=personal("CalibrationBacktest",fields(
+    fun backtestRecord(candidate:CandidateCalibration,result:BackTestResult):JsonObject {
+        val decision=validationDecision(result)
+        return personal("CalibrationBacktest",fields(
         "candidateId" to p(candidate.id),"algorithmId" to p(candidate.algorithmId),"algorithmVersion" to p(candidate.algorithmVersion),
         "baseCalibrationVersion" to p(candidate.baseCalibrationVersion),"baseCalibrationSetId" to p(candidate.baseCalibrationSetId),
         "calibrationEngineVersion" to p(VERSION),"datasetHash" to p(candidate.datasetHash),
@@ -189,8 +234,9 @@ object JamesCalibrationEngine {
         "currentMae" to (result.currentMae?.let(::p)?:JsonNull),"candidateMae" to (result.candidateMae?.let(::p)?:JsonNull),
         "currentBias" to (result.currentBias?.let(::p)?:JsonNull),"candidateBias" to (result.candidateBias?.let(::p)?:JsonNull),
         "improvementPercent" to (result.improvementPercent?.let(::p)?:JsonNull),"regressions" to JsonArray(result.regressions.map(::p)),
-        "robustValidation" to p(result.robustValidation),"replayMethod" to p(result.replayMethod)
-    ),recordId="backtest:"+candidate.id,source="calibration_engine")
+        "robustValidation" to p(result.robustValidation),"minimumValidationObservations" to p(decision.minimumValidationObservations),"validationState" to p(decision.state.name),"validationDetail" to p(decision.detail),"replayMethod" to p(result.replayMethod)
+        ),recordId="backtest:"+candidate.id,source="calibration_engine")
+    }
     fun candidateRecord(candidate:CandidateCalibration,status:CandidateStatus=candidate.status)=personal("CalibrationCandidate",fields("candidateId" to p(candidate.id),"algorithmId" to p(candidate.algorithmId),"algorithmVersion" to p(candidate.algorithmVersion),"calibrationSchemaVersion" to p(candidate.calibrationSchemaVersion),"calibrationEngineVersion" to p(candidate.engineVersion),"baseCalibrationVersion" to p(candidate.baseCalibrationVersion),"baseCalibrationSetId" to p(candidate.baseCalibrationSetId),"datasetHash" to p(candidate.datasetHash),"dependencyVersions" to JsonObject(candidate.dependencyVersions.toSortedMap().mapValues {p(it.value)}),"baseParameters" to JsonObject(candidate.baseParameters.mapValues {p(it.value)}),"parameters" to JsonObject(candidate.parameters.mapValues {p(it.value)}),"reason" to p(candidate.reason),"evidenceIds" to JsonArray(candidate.evidenceIds.map(::p)),"createdBy" to p(candidate.createdBy.name),"status" to p(status.name)),recordId=candidate.id,source="calibration_engine",timestamp=candidate.createdAt.toString())
     fun parseCandidate(row:StoredRecord):CandidateCalibration? {
         if(row.kind!="CalibrationCandidate")return null
@@ -211,8 +257,8 @@ object JamesCalibrationEngine {
     fun candidateStalenessReason(candidate:CandidateCalibration,events:List<CalibrationObservation>,active:ActiveCalibration,dependencies:Map<String,String>):String? = when {
         candidate.engineVersion!=VERSION -> "Calibration Engine version changed."
         candidate.baseCalibrationVersion!=active.version || candidate.baseCalibrationSetId!=active.setId -> "The active base calibration changed."
-        candidate.datasetHash.isBlank() || candidate.datasetHash!=datasetIdentity(events.filter {it.algorithmId==candidate.algorithmId}) -> "Calibration evidence changed."
-        candidate.evidenceIds.sorted()!=events.filter {!it.ignored&&it.algorithmId==candidate.algorithmId}.map {it.id}.sorted() -> "Calibration evidence set changed."
+        candidate.datasetHash.isBlank() || candidate.datasetHash!=datasetIdentity(compatibleEvidence(events,candidate.algorithmId)) -> "Calibration evidence changed."
+        candidate.evidenceIds.sorted()!=compatibleEvidence(events,candidate.algorithmId).map {it.id}.sorted() -> "Calibration evidence set changed."
         candidate.dependencyVersions!=dependencies -> "A dependency calibration changed."
         else -> null
     }

@@ -20,6 +20,8 @@ data class SleepinessResult(
     val confidence:String,
     val underlyingPressure:Int,
     val expressedSleepiness:Int,
+    val rawExpressedSleepiness:Int,
+    val calibrationApplied:Boolean,
     val calculatedAt:String,
     val jamesDayId:String,
     val wakeAt:String,
@@ -132,6 +134,7 @@ fun sleepiness(records:List<StoredRecord>,clock:Instant=Instant.now(),zone:ZoneI
     val underlying=(10.0+wakeContribution+shortSleepContribution+recentContribution+restorativeContribution+circadian).coerceIn(0.0,100.0).roundToInt()
     val baseExpressed=(underlying-napRelief-caffeineRelief).coerceIn(0.0,100.0).roundToInt()
     val final=JamesCalibrationEngine.applyActiveScore(baseExpressed,records,"sleepiness")
+    val calibrationApplied=final!=baseExpressed
     val processing=whoopSleepPending(records,clock)
     val freshness=main?.sleepEnd()?.let {Duration.between(it,clock).toHours()}.let {hours->when {processing->"NEW MAIN SLEEP PROCESSING";main==null->"MAIN SLEEP PENDING OR UNAVAILABLE";hours!=null&&hours<=36->"CURRENT JAMES DAY";else->"STALE"}}
     // Historical sleeps can establish a learning baseline before the current
@@ -153,7 +156,7 @@ fun sleepiness(records:List<StoredRecord>,clock:Instant=Instant.now(),zone:ZoneI
         if(final!=baseExpressed)add(ContextEvidence("Personal calibration",(final-baseExpressed).toDouble(),"Calculated using James Calibration ${active.version}.",source=active.setId))
     }
     return SleepinessResult(
-        score=final,label=sleepinessLabel(final),confidence=confidence,underlyingPressure=underlying,expressedSleepiness=final,
+        score=final,label=sleepinessLabel(final),confidence=confidence,underlyingPressure=underlying,expressedSleepiness=final,rawExpressedSleepiness=baseExpressed,calibrationApplied=calibrationApplied,
         calculatedAt=clock.toString(),jamesDayId=day.id,wakeAt=wake.toString(),timeAwakeMinutes=awakeMinutes,
         mainSleepMinutes=mainMinutes,mainSleepSource=main?.source,baselineSleepMinutes=baseline,baselineSampleCount=durations.size,
         wakeContribution=wakeContribution,shortSleepContribution=shortSleepContribution,recentShortfallContribution=recentContribution,
@@ -164,4 +167,4 @@ fun sleepiness(records:List<StoredRecord>,clock:Instant=Instant.now(),zone:ZoneI
     )
 }
 
-fun SleepinessResult.asMetric()=RightNowMetric("sleepiness",score,label,confidence,calculatedAt,contributors,baseScore=(score-(contributors.lastOrNull {it.name=="Personal calibration"}?.contribution?:0.0)).roundToInt().coerceIn(0,100),algorithmVersion=algorithmVersion,calibrationVersion=calibrationVersion,calibrationSetId=calibrationSetId)
+fun SleepinessResult.asMetric()=RightNowMetric("sleepiness",score,label,confidence,calculatedAt,contributors,baseScore=rawExpressedSleepiness,algorithmVersion=algorithmVersion,calibrationVersion=calibrationVersion,calibrationSetId=calibrationSetId)

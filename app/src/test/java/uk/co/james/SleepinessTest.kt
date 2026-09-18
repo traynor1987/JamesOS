@@ -5,6 +5,10 @@ import java.time.Instant
 import java.time.ZoneOffset
 import org.junit.Assert.*
 import org.junit.Test
+import uk.co.james.calibration.CandidateCalibration
+import uk.co.james.calibration.CandidateCreator
+import uk.co.james.calibration.CandidateStatus
+import uk.co.james.calibration.JamesCalibrationEngine
 import uk.co.james.core.*
 import uk.co.james.database.StoredRecord
 import uk.co.james.state.*
@@ -131,5 +135,15 @@ class SleepinessTest {
         val eighteen=sleepiness(rows,wake.plus(Duration.ofHours(18)),ZoneOffset.UTC)
         assertTrue(two.wakeContribution<eight.wakeContribution);assertTrue(eight.wakeContribution<eighteen.wakeContribution)
         assertEquals(two,sleepiness(rows,wake.plus(Duration.ofHours(2)),ZoneOffset.UTC))
+    }
+
+    @Test fun acceptedCalibrationChangesProductionScoreButRetainsRawSleepiness() {
+        val rows=history(5,480)+main()
+        val candidate=CandidateCalibration("sleepiness-approved","sleepiness",JamesAlgorithmRegistry.SLEEPINESS_VERSION,JamesAlgorithmRegistry.SLEEPINESS_CALIBRATION,mapOf("outputBias" to 4.0),"Validated synthetic correction",emptyList(),clock,CandidateCreator.CALIBRATION_ENGINE,CandidateStatus.TESTED)
+        val profile=StoredRecord.from("personalRecords",JamesCalibrationEngine.activeProfileRecord(candidate,"1.0.1","test activation"))
+        val result=sleepiness(rows+profile,clock,ZoneOffset.UTC)
+        assertTrue(result.calibrationApplied)
+        assertEquals((result.rawExpressedSleepiness+4).coerceAtMost(100),result.score)
+        assertEquals(result.score,result.expressedSleepiness)
     }
 }

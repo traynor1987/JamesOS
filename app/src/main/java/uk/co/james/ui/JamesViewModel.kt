@@ -430,14 +430,14 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
         repo.save("personalRecords",raw);message.value="Energy check-in saved."
     }
 
-    data class CalibrationTarget(val score:Int,val confidence:String,val jamesDayId:String?,val algorithmVersion:String,val calibrationVersion:String,val calibrationSetId:String="")
+    data class CalibrationTarget(val score:Int,val confidence:String,val jamesDayId:String?,val algorithmVersion:String,val calibrationVersion:String,val calibrationSetId:String="",val rawScore:Int?=null,val calibrationApplied:Boolean=false)
     fun calibrationTarget(algorithmId:String):CalibrationTarget? {
         val rows=records.value;val entry=JamesAlgorithmRegistry.get(algorithmId)?:return null
         val right=if(algorithmId in setOf("live_energy","sleepiness","energy_sustainability","crash_risk","time_pressure"))rightNowSummary(rows,energyTimeSettings.value)else null
         val target=when(algorithmId) {
             "body_battery"->bodyBattery(rows).let {b->b.value?.let {CalibrationTarget(it,b.confidence,b.trace?.jamesDayId,b.algorithmVersion,b.calibrationVersion,b.calibrationSetId.orEmpty())}}
             "live_energy"->right?.liveEnergy?.let {CalibrationTarget(it.score,it.confidence,right.jamesDay.id,it.algorithmVersion,it.calibrationVersion,it.calibrationSetId)}
-            "sleepiness"->right?.sleepiness?.let {CalibrationTarget(it.score,it.confidence,right.jamesDay.id,it.algorithmVersion,it.calibrationVersion,it.calibrationSetId)}
+            "sleepiness"->right?.sleepiness?.let {CalibrationTarget(it.score,it.confidence,right.jamesDay.id,it.algorithmVersion,it.calibrationVersion,it.calibrationSetId,it.rawExpressedSleepiness,it.calibrationApplied)}
             "energy_sustainability"->right?.sustainability?.let {CalibrationTarget(it.score,it.confidence,right.jamesDay.id,it.algorithmVersion,it.calibrationVersion,it.calibrationSetId)}
             "crash_risk"->right?.crashRisk?.let {CalibrationTarget(it.score,it.confidence,right.jamesDay.id,it.algorithmVersion,it.calibrationVersion,it.calibrationSetId)}
             "time_pressure"->right?.timePressure?.let {CalibrationTarget(it.score,it.confidence,right.jamesDay.id,it.algorithmVersion,it.calibrationVersion,it.calibrationSetId)}
@@ -499,9 +499,10 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
             val candidate=withContext(Dispatchers.Default){JamesCalibrationEngine.candidate(events,algorithmId,active.version,active.parameters,baseCalibrationSetId=active.setId,dependencyVersions=dependencies)}
             if(candidate==null) {repo.recordCalibrationAnalysis(algorithmId,"COMPLETE","More varied evidence is required.");message.value="More varied calibration evidence is needed before a safe candidate can be generated.";return@action}
             val result=withContext(Dispatchers.Default){JamesCalibrationEngine.backTest(events,candidate)}
-            val tested=if(result.robustValidation&&result.regressions.isEmpty()&&(result.improvementPercent?:0.0)>0)CandidateStatus.TESTED else CandidateStatus.DRAFT
-            repo.saveAnalysedCandidate(candidate,result,tested);repo.recordCalibrationAnalysis(algorithmId,"COMPLETE",if(tested==CandidateStatus.TESTED)"Tested candidate available." else "Validation limited or regression detected.")
-            message.value=if(tested==CandidateStatus.TESTED)"Tested candidate available for review."else"Analysis complete. Candidate remains draft because validation is limited or a regression was found."
+            val decision=JamesCalibrationEngine.validationDecision(result)
+            val tested=if(decision.state==CalibrationValidationState.ACCEPTED)CandidateStatus.TESTED else CandidateStatus.DRAFT
+            repo.saveAnalysedCandidate(candidate,result,tested);repo.recordCalibrationAnalysis(algorithmId,"COMPLETE",decision.detail)
+            message.value=if(tested==CandidateStatus.TESTED)"Tested candidate available for review."else"Analysis complete. Candidate remains draft. "+decision.detail
         } catch(e:CancellationException) {repo.recordCalibrationAnalysis(algorithmId,"FAILED","Analysis cancelled safely.");throw e
         } catch(e:Exception) {repo.recordCalibrationAnalysis(algorithmId,"FAILED",e.message?:"Analysis failed safely.");throw e}
     }

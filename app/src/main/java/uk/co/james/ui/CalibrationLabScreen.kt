@@ -52,7 +52,7 @@ private fun CalibrationOverview(vm:JamesViewModel,rows:List<uk.co.james.database
             add {JamesCard(entry.displayName,metric.quality.name.replace('_',' ')) {
                 Text(metric.count.toString()+" observations")
                 metric.meanAbsoluteError?.let {Text("Typical error: ±"+String.format(java.util.Locale.UK,"%.1f",it)+" points")}
-                metric.meanError?.let {Text("Bias: "+String.format(java.util.Locale.UK,"%+.1f",it)+" points")}
+                JamesCalibrationEngine.biasInterpretation(metric.meanError)?.let {Text(it.description)}
                 TextButton(onClick={vm.navigate("Calibration:"+registration.algorithmId)}){Text("OPEN")}
             }}
         }
@@ -71,6 +71,18 @@ private fun CalibrationAlgorithm(vm:JamesViewModel,rows:List<uk.co.james.databas
     val candidates=rows.filter {it.kind=="CalibrationCandidate"&&it.data().text("algorithmId")==algorithmId}.sortedByDescending {it.timestamp}
     val backtests=rows.filter {it.kind=="CalibrationBacktest"&&it.data().text("algorithmId")==algorithmId}.associateBy {it.data().text("candidateId")}
     val analysis=rows.firstOrNull {it.kind=="CalibrationAnalysis"&&it.data().text("algorithmId")==algorithmId}?.data()
+    fun validationDetail(test:kotlinx.serialization.json.JsonObject?):String? {
+        if(test==null)return null
+        val stored=test.text("validationDetail")
+        if(stored.isNotBlank())return stored
+        return when {
+            !test.flag("robustValidation") -> "Held-out validation is limited: "+test.number("validationCount").toInt()+" of "+JamesCalibrationEngine.MINIMUM_HELD_OUT_VALIDATION_OBSERVATIONS+" required observations."
+            test.array("regressions").isNotEmpty() -> "Candidate worsened one or more protected validation slices."
+            test.number("improvementPercent")<=0.0 -> "Candidate did not improve held-out validation error."
+            else -> "Candidate improved held-out validation without protected-slice regressions."
+        }
+    }
+    val newestTest=candidates.firstNotNullOfOrNull {candidate->backtests[candidate.recordId]?.data()}
     var calibrating by rememberSaveable {mutableStateOf(false)}
     var calibrationTargetAtOpen by remember {mutableStateOf<JamesViewModel.CalibrationTarget?>(null)}
     var submissionId by rememberSaveable {mutableStateOf("")}
@@ -94,16 +106,30 @@ private fun CalibrationAlgorithm(vm:JamesViewModel,rows:List<uk.co.james.databas
             Text("Input confidence: "+(target?.confidence?:"UNAVAILABLE"))
             Text("Calibration accuracy: "+metric.quality.name.replace('_',' '))
             Text(metric.count.toString()+" observations")
-            target?.let {shown->Text("Current prediction: "+shown.score+"/100");Button(onClick={calibrationTargetAtOpen=shown;submissionId=id();calibrating=true}){Text("CALIBRATE")}}
+            target?.let {shown->
+                Text("Current production prediction: "+shown.score+"/100")
+                if(algorithmId=="sleepiness") {
+                    Text("Raw model prediction: "+(shown.rawScore?:shown.score)+"/100")
+                    Muted(if(shown.calibrationApplied)"An accepted personal calibration is applied to the production prediction." else "No accepted personal correction is applied to this production prediction.")
+                }
+                Button(onClick={calibrationTargetAtOpen=shown;submissionId=id();calibrating=true}){Text("CALIBRATE")}
+            }
         }}
         add {JamesCard("Accuracy","STRUCTURED EVIDENCE") {
             metric.meanAbsoluteError?.let {Text("MAE: "+String.format(java.util.Locale.UK,"%.2f",it))}
             metric.medianAbsoluteError?.let {Text("Median absolute error: "+String.format(java.util.Locale.UK,"%.2f",it))}
             metric.recencyWeightedMae?.let {Text("Recency-weighted MAE: "+String.format(java.util.Locale.UK,"%.2f",it))}
-            metric.meanError?.let {Text("Bias: "+String.format(java.util.Locale.UK,"%+.2f",it))}
+            metric.meanError?.let {bias->
+                Text("Raw signed bias (prediction − James): "+String.format(java.util.Locale.UK,"%+.2f",bias))
+                JamesCalibrationEngine.biasInterpretation(bias)?.let {Text(it.description)}
+            }
             if(metric.count<registration.minimumEvidence)Muted("More data needed: at least "+registration.minimumEvidence+" suitable observations before automatic candidate generation.")
             Button(enabled=analysis?.text("status")!="ANALYSING",onClick={vm.analyseCalibration(algorithmId)}){Text(if(analysis?.text("status")=="ANALYSING")"ANALYSING…" else "ANALYSE NOW")}
-            analysis?.let {state->Muted("Last analysis: "+state.text("status")+(state.text("detail").takeIf {it.isNotBlank()}?.let {" · $it"}?:""))}
+            analysis?.let {state->
+                val stored=state.text("detail")
+                val detail=if(stored=="Validation limited or regression detected.")validationDetail(newestTest)?:"Analysis recorded before detailed validation diagnostics were available." else stored
+                Muted("Last analysis: "+state.text("status")+(detail.takeIf {it.isNotBlank()}?.let {" · $it"}?:""))
+            }
             Muted("Runs locally in a background coroutine. Nova cannot activate or bypass validation.")
         }}
         add {JamesCard("Coverage","ERROR BY PREDICTION RANGE") {
@@ -132,7 +158,15 @@ private fun CalibrationAlgorithm(vm:JamesViewModel,rows:List<uk.co.james.databas
                     val before=d.obj("baseParameters")[name]?.jsonPrimitive?.contentOrNull?:active?.data()?.obj("parameters")?.get(name)?.jsonPrimitive?.contentOrNull?:registration.parameters.firstOrNull {it.id==name}?.defaultValue?.toString()?:"—"
                     Text(name+": "+before+" → "+value.jsonPrimitive.content)
                 }
-                test?.let {Text("Validation: "+test.number("currentMae")+" → "+test.number("candidateMae")+" MAE");Text("Expected improvement: "+String.format(java.util.Locale.UK,"%.1f",test.number("improvementPercent"))+"%");if(test.array("regressions").isNotEmpty())test.array("regressions").forEach {Muted("Regression: "+it.jsonPrimitive.content)}}
+                test?.let {
+                    Text("Eligible training observations: "+test.number("trainCount").toInt())
+                    Text("Held-out validation: "+test.number("validationCount").toInt()+" observations (minimum "+test.number("minimumValidationObservations",JamesCalibrationEngine.MINIMUM_HELD_OUT_VALIDATION_OBSERVATIONS.toDouble()).toInt()+")")
+                    Text("Validation MAE: "+test.number("currentMae")+" → "+test.number("candidateMae"))
+                    Text("Validation bias (prediction − James): "+String.format(java.util.Locale.UK,"%+.1f",test.number("currentBias"))+" → "+String.format(java.util.Locale.UK,"%+.1f",test.number("candidateBias")))
+                    Text("Expected improvement: "+String.format(java.util.Locale.UK,"%.1f",test.number("improvementPercent"))+"%")
+                    validationDetail(test)?.let(::Muted)
+                    if(test.array("regressions").isNotEmpty())test.array("regressions").forEach {Muted("Regression: "+it.jsonPrimitive.content)}
+                }
                 if(d.text("status")=="TESTED")Button(onClick={activate=candidate}){Text("ACTIVATE")}
                 Muted("Activation requires James's approval. Historical scores remain on their original calibration.")
             }}

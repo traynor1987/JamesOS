@@ -483,7 +483,8 @@ internal fun providerSyncStatus(stamp:String,now:Instant=Instant.now()):String {
             Text("Body Battery: ${summary.bodyBattery?:"Unavailable"} · Mental Reserve: ${summary.mentalReserve}")
             Text("Awake: ${summary.awakeMinutes/60}h ${summary.awakeMinutes%60}m · Time That Was Mine: ${summary.personalMinutes}m")
             if(id=="sleepiness")summary.sleepinessDetails.let {sleepy->
-                Text("Underlying sleep pressure: ${sleepy.underlyingPressure} · Expressed Sleepiness: ${sleepy.expressedSleepiness}")
+                Text("Underlying sleep pressure: ${sleepy.underlyingPressure} · Raw model: ${sleepy.rawExpressedSleepiness} · Production Sleepiness: ${sleepy.expressedSleepiness}")
+                if(sleepy.calibrationApplied)Muted("An accepted personal calibration is included in the production Sleepiness value.")
                 Text("Main sleep: ${sleepy.mainSleepMinutes?.roundToInt()?.let {"$it min"}?:"pending/unavailable"} · ${sleepy.mainSleepSource?:"unknown source"}")
                 Text("Wake: ${sleepy.wakeAt} · recent baseline: ${sleepy.baselineSleepMinutes?.roundToInt()?.let {"$it min"}?:"learning"}")
                 Text("Wake contribution: ${String.format(java.util.Locale.UK,"%+.1f",sleepy.wakeContribution)} · short sleep: ${String.format(java.util.Locale.UK,"%+.1f",sleepy.shortSleepContribution)}")
