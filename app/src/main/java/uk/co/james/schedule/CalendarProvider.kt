@@ -20,6 +20,6 @@ class CalendarProvider(private val resolver:ContentResolver) {
                 val start=Instant.ofEpochMilli(row.getLong(3));val end=Instant.ofEpochMilli(row.getLong(4));if(!end.isAfter(start))return@mapNotNull null
                 CalendarInstance(row.getString(0)?:return@mapNotNull null,calendarId,row.getString(2).orEmpty(),start,end,row.getInt(5)!=0,when(row.getInt(6)){CalendarContract.Events.AVAILABILITY_BUSY->"BUSY";CalendarContract.Events.AVAILABILITY_FREE->"FREE";CalendarContract.Events.AVAILABILITY_TENTATIVE->"TENTATIVE";else->null},row.getLong(7))
             }.toList()
-        }.orEmpty()
+        }?:error("Calendar provider unavailable; existing plans were retained.")
     }
 }

@@ -24,7 +24,7 @@ class WearSync(private val context:Context,private val repo:WearRepository) {
         val node=nodes.firstOrNull()?:run {repo.setConnected(false);return false}
         repo.syncing()
         val ordinary=repo.dao.pending(50)
-        val correlated=if(requestId.isNullOrBlank()) emptyList() else repo.dao.pendingSince(requestedAt)
+        val correlated=if(requestId.isNullOrBlank()) emptyList() else repo.dao.observationsSince(requestedAt)
             .filter {it.type in setOf("heart_rate","samsung_hrv","samsung_eda","samsung_skin_temperature","james_stress")}
         // A correlated upload is successful only when the actual result is in
         // this envelope. Prioritise the new sensor-check rows over any passive

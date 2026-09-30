@@ -22,9 +22,10 @@ class CalendarScheduleSource(private val context:Context, private val repository
     companion object { val LOOK_AHEAD:Duration=Duration.ofDays(7); val RECONCILE_HISTORY:Duration=Duration.ofDays(3) }
     fun permitted()=ContextCompat.checkSelfPermission(context,Manifest.permission.READ_CALENDAR)==PackageManager.PERMISSION_GRANTED
     suspend fun refresh(enabledCalendarIds:Set<String>, now:Instant=Instant.now()):Int {
-        if(!permitted()||enabledCalendarIds.isEmpty())return 0
+        if(enabledCalendarIds.isEmpty()||!permitted())return retireUnavailablePlans(enabledCalendarIds,now)
+
         val rows=CalendarProvider(context.contentResolver).instances(now.minus(RECONCILE_HISTORY),now.plus(LOOK_AHEAD),enabledCalendarIds)
-        val rules=repository.stateInputs(now).filter {it.kind=="CalendarClassificationRule"&&it.data().flag("enabled")}
+        val rules=repository.dao.calendarConfiguration().filter {it.kind=="CalendarClassificationRule"&&it.data().flag("enabled")}
         var changed=0
         repository.db.withTransaction {
             val seen=rows.map {it.asCommitment().stableId}.toSet()
@@ -46,15 +47,24 @@ class CalendarScheduleSource(private val context:Context, private val repository
             // Provider deletion only retires still-planned Calendar evidence.
             // Independently confirmed Visits/Ownership are separate facts and
             // are intentionally never touched here.
-            repository.dao.sourceKindBetween("android_calendar","ScheduledCommitment",now.toString(),now.plus(LOOK_AHEAD).toString()).filter {it.recordId !in seen&&it.data().text("status","UPCOMING")=="UPCOMING"}.forEach { stale ->
+            repository.dao.sourceCommitments("android_calendar",now.toString(),now.plus(LOOK_AHEAD).toString()).filter {it.recordId !in seen&&it.data().text("status","UPCOMING") in setOf("UPCOMING","IN_PROGRESS")}.forEach { stale ->
                 val cancelled=stale.raw().changed(
-                    "data" to stale.data().changed("status" to p("CANCELLED"),"fixedConstraint" to p(false),"providerRemovedAt" to p(now.toString())),
+                    "data" to stale.data().changed("status" to p("CANCELLED"),"fixedConstraint" to p(false),"providerRemovedAt" to p(now.toString()),"retirementReason" to p(if(stale.data().text("calendarId") !in enabledCalendarIds)"CALENDAR_DESELECTED" else "PROVIDER_REMOVED")),
                     "updatedAt" to p(now.toString())
                 )
                 repository.dao.put(StoredRecord.from(stale.store,cancelled));changed++
             }
         }
         return changed
+    }
+    private suspend fun retireUnavailablePlans(enabledCalendarIds:Set<String>,now:Instant):Int=repository.db.withTransaction {
+        val stale=repository.dao.sourceCommitments("android_calendar",now.toString(),now.plus(LOOK_AHEAD).toString())
+            .filter {it.data().text("status","UPCOMING") in setOf("UPCOMING","IN_PROGRESS")}
+        stale.forEach {row->
+            val reason=if(enabledCalendarIds.isEmpty()||row.data().text("calendarId") !in enabledCalendarIds)"CALENDAR_DESELECTED" else "PERMISSION_UNAVAILABLE"
+            repository.dao.put(StoredRecord.from(row.store,row.raw().changed("data" to row.data().changed("status" to p("CANCELLED"),"fixedConstraint" to p(false),"retirementReason" to p(reason),"retiredAt" to p(now.toString())),"updatedAt" to p(now.toString()))))
+        }
+        stale.size
     }
     suspend fun classify(commitmentId:String, ownership:String, applyToSimilar:Boolean=false, now:Instant=Instant.now()) {
         require(ownership in setOf("AUTONOMOUS","WORK","COMMITTED","CONSTRAINED","UNKNOWN"))

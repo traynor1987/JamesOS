@@ -1,0 +1,352 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 7,
+    "identityHash": "e7509ff7a40f86914c4fcd899447cfc4",
+    "entities": [
+      {
+        "tableName": "records",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`store` TEXT NOT NULL, `recordId` TEXT NOT NULL, `kind` TEXT NOT NULL, `source` TEXT NOT NULL, `timestamp` TEXT NOT NULL, `localDate` TEXT NOT NULL, `updatedAt` TEXT NOT NULL, `externalId` TEXT, `rawJson` TEXT, `algorithmId` TEXT, `calibrationVersion` TEXT, `candidateStatus` TEXT, `jamesDayId` TEXT, `sourceShiftId` TEXT, PRIMARY KEY(`store`, `recordId`))",
+        "fields": [
+          {
+            "fieldPath": "store",
+            "columnName": "store",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "recordId",
+            "columnName": "recordId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timestamp",
+            "columnName": "timestamp",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localDate",
+            "columnName": "localDate",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "externalId",
+            "columnName": "externalId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "rawJson",
+            "columnName": "rawJson",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "algorithmId",
+            "columnName": "algorithmId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "calibrationVersion",
+            "columnName": "calibrationVersion",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "candidateStatus",
+            "columnName": "candidateStatus",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "jamesDayId",
+            "columnName": "jamesDayId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "sourceShiftId",
+            "columnName": "sourceShiftId",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "store",
+            "recordId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_records_kind",
+            "unique": false,
+            "columnNames": [
+              "kind"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_records_kind` ON `${TABLE_NAME}` (`kind`)"
+          },
+          {
+            "name": "index_records_source",
+            "unique": false,
+            "columnNames": [
+              "source"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_records_source` ON `${TABLE_NAME}` (`source`)"
+          },
+          {
+            "name": "index_records_localDate",
+            "unique": false,
+            "columnNames": [
+              "localDate"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_records_localDate` ON `${TABLE_NAME}` (`localDate`)"
+          },
+          {
+            "name": "index_records_timestamp",
+            "unique": false,
+            "columnNames": [
+              "timestamp"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_records_timestamp` ON `${TABLE_NAME}` (`timestamp`)"
+          },
+          {
+            "name": "index_records_source_externalId",
+            "unique": false,
+            "columnNames": [
+              "source",
+              "externalId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_records_source_externalId` ON `${TABLE_NAME}` (`source`, `externalId`)"
+          },
+          {
+            "name": "index_records_source_sourceShiftId",
+            "unique": false,
+            "columnNames": [
+              "source",
+              "sourceShiftId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_records_source_sourceShiftId` ON `${TABLE_NAME}` (`source`, `sourceShiftId`)"
+          },
+          {
+            "name": "index_records_kind_timestamp",
+            "unique": false,
+            "columnNames": [
+              "kind",
+              "timestamp"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_records_kind_timestamp` ON `${TABLE_NAME}` (`kind`, `timestamp`)"
+          },
+          {
+            "name": "index_records_source_kind_timestamp",
+            "unique": false,
+            "columnNames": [
+              "source",
+              "kind",
+              "timestamp"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_records_source_kind_timestamp` ON `${TABLE_NAME}` (`source`, `kind`, `timestamp`)"
+          },
+          {
+            "name": "index_records_store_timestamp",
+            "unique": false,
+            "columnNames": [
+              "store",
+              "timestamp"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_records_store_timestamp` ON `${TABLE_NAME}` (`store`, `timestamp`)"
+          },
+          {
+            "name": "index_records_algorithmId_timestamp",
+            "unique": false,
+            "columnNames": [
+              "algorithmId",
+              "timestamp"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_records_algorithmId_timestamp` ON `${TABLE_NAME}` (`algorithmId`, `timestamp`)"
+          },
+          {
+            "name": "index_records_algorithmId_calibrationVersion_timestamp",
+            "unique": false,
+            "columnNames": [
+              "algorithmId",
+              "calibrationVersion",
+              "timestamp"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_records_algorithmId_calibrationVersion_timestamp` ON `${TABLE_NAME}` (`algorithmId`, `calibrationVersion`, `timestamp`)"
+          },
+          {
+            "name": "index_records_candidateStatus_timestamp",
+            "unique": false,
+            "columnNames": [
+              "candidateStatus",
+              "timestamp"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_records_candidateStatus_timestamp` ON `${TABLE_NAME}` (`candidateStatus`, `timestamp`)"
+          },
+          {
+            "name": "index_records_jamesDayId_algorithmId_timestamp",
+            "unique": false,
+            "columnNames": [
+              "jamesDayId",
+              "algorithmId",
+              "timestamp"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_records_jamesDayId_algorithmId_timestamp` ON `${TABLE_NAME}` (`jamesDayId`, `algorithmId`, `timestamp`)"
+          },
+          {
+            "name": "index_records_jamesDayId_timestamp",
+            "unique": false,
+            "columnNames": [
+              "jamesDayId",
+              "timestamp"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_records_jamesDayId_timestamp` ON `${TABLE_NAME}` (`jamesDayId`, `timestamp`)"
+          }
+        ]
+      },
+      {
+        "tableName": "archives",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `path` TEXT NOT NULL, `digest` TEXT NOT NULL, `createdAt` TEXT NOT NULL, `purpose` TEXT NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "path",
+            "columnName": "path",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "digest",
+            "columnName": "digest",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "purpose",
+            "columnName": "purpose",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "import_history",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `source` TEXT NOT NULL, `timestamp` TEXT NOT NULL, `found` INTEGER NOT NULL, `added` INTEGER NOT NULL, `duplicates` INTEGER NOT NULL, `conflicts` INTEGER NOT NULL, `errors` TEXT NOT NULL, `originalArchiveId` TEXT NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timestamp",
+            "columnName": "timestamp",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "found",
+            "columnName": "found",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "added",
+            "columnName": "added",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "duplicates",
+            "columnName": "duplicates",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "conflicts",
+            "columnName": "conflicts",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "errors",
+            "columnName": "errors",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "originalArchiveId",
+            "columnName": "originalArchiveId",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'e7509ff7a40f86914c4fcd899447cfc4')"
+    ]
+  }
+}

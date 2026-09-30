@@ -11,10 +11,11 @@ class JamesPassiveDataService:PassiveListenerService() {
     override fun onNewDataPointsReceived(dataPoints:DataPointContainer) {
         runBlocking {
             val repo=(application as JamesWearApplication).repository
-            dataPoints.getData(DataType.HEART_RATE_BPM).filter {it.value>0}.maxByOrNull {it.timeDurationFromBoot}?.let {repo.observe("heart_rate",it.value,"bpm")}
-            dataPoints.getData(DataType.STEPS_DAILY).maxByOrNull {it.endDurationFromBoot}?.let {repo.observe("steps",it.value.toDouble(),"steps")}
-            dataPoints.getData(DataType.CALORIES_DAILY).maxByOrNull {it.endDurationFromBoot}?.let {repo.observe("calories",it.value,"kcal")}
-            dataPoints.getData(DataType.DISTANCE_DAILY).maxByOrNull {it.endDurationFromBoot}?.let {repo.observe("distance",it.value,"m")}
+            val wallTime=System.currentTimeMillis();val elapsed=android.os.SystemClock.elapsedRealtime()
+            dataPoints.getData(DataType.HEART_RATE_BPM).filter {it.value>0}.maxByOrNull {it.timeDurationFromBoot}?.let {point->passiveObservationTime(point.timeDurationFromBoot,wallTime,elapsed)?.let {repo.observe("heart_rate",point.value,"bpm",it)}}
+            dataPoints.getData(DataType.STEPS_DAILY).maxByOrNull {it.endDurationFromBoot}?.let {point->passiveObservationTime(point.endDurationFromBoot,wallTime,elapsed)?.let {repo.observe("steps",point.value.toDouble(),"steps",it)}}
+            dataPoints.getData(DataType.CALORIES_DAILY).maxByOrNull {it.endDurationFromBoot}?.let {point->passiveObservationTime(point.endDurationFromBoot,wallTime,elapsed)?.let {repo.observe("calories",point.value,"kcal",it)}}
+            dataPoints.getData(DataType.DISTANCE_DAILY).maxByOrNull {it.endDurationFromBoot}?.let {point->passiveObservationTime(point.endDurationFromBoot,wallTime,elapsed)?.let {repo.observe("distance",point.value,"m",it)}}
             saveAutomaticStressPulse(repo)
             WearSync(this@JamesPassiveDataService,repo).uploadPending()
         }

@@ -12,10 +12,10 @@ import java.time.Instant
 /** A deliberate, user-opened schedule surface.  It never interrogates James
  * while Today recomposes: UNKNOWN is valid planned ownership. */
 @Composable fun ScheduleScreen(vm:JamesViewModel, records:List<StoredRecord>) {
-    val now=remember { Instant.now() }
+    val now by produceState(Instant.now()) {while(true){value=Instant.now();kotlinx.coroutines.delay(60_000)}}
     val commitments=records.filter {it.kind=="ScheduledCommitment"}
         .filter {it.data().text("status","UPCOMING") in setOf("UPCOMING","IN_PROGRESS")}
-        .filter {it.data().text("start").let {stamp->runCatching {Instant.parse(stamp)}.getOrNull()?.isAfter(now.minusSeconds(60))==true}}
+        .filter {it.data().text("end").let {stamp->runCatching {Instant.parse(stamp)}.getOrNull()?.isAfter(now)==true}}
         .sortedBy {it.data().text("start") }.take(20)
     val rules=records.filter {it.kind=="CalendarClassificationRule"}.sortedBy {it.data().text("title")}
     var target by remember { mutableStateOf<StoredRecord?>(null) }
