@@ -59,3 +59,5 @@ local.properties
 
 # Samsung SDK binary is obtained separately under Samsung's terms; never commit it.
 wear/libs/samsung-health-sensor-api-1.4.1.aar
+
+.kotlin/

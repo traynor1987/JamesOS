@@ -13,7 +13,7 @@ import java.util.UUID
 import kotlinx.coroutines.flow.*
 
 class WearRepository(private val context:Context) {
-    private val db=Room.databaseBuilder(context,WearDatabase::class.java,"james-wear.db").build()
+    private val db=Room.databaseBuilder(context,WearDatabase::class.java,"james-wear.db").addMigrations(WEAR_MIGRATION_1_2).build()
     val dao=db.dao()
     val snapshot=dao.snapshot().map {row->row?.let {runCatching {parseSnapshot(it.json)}.getOrNull()}?:JamesSnapshot()}
     val snapshotReceivedAt=dao.snapshot().map {it?.receivedAt?:0L}

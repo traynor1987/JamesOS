@@ -18,6 +18,7 @@ import uk.co.james.database.MIGRATION_3_4
 import uk.co.james.database.MIGRATION_4_5
 import uk.co.james.database.MIGRATION_5_6
 import uk.co.james.database.MIGRATION_6_7
+import uk.co.james.database.MIGRATION_7_8
 
 @RunWith(AndroidJUnit4::class)
 class P1PersistenceInstrumentedTest {
@@ -37,7 +38,7 @@ class P1PersistenceInstrumentedTest {
             legacy.execSQL("INSERT INTO records VALUES ('metadata','kept','Metadata','james','2026-09-12T00:00:00Z','2026-09-12','2026-09-12T00:00:00Z',NULL,'{}')")
             legacy.version=1
         }
-        val migrated=Room.databaseBuilder(context,JamesDatabase::class.java,name).addMigrations(MIGRATION_1_2,MIGRATION_2_3,MIGRATION_3_4,MIGRATION_4_5,MIGRATION_5_6,MIGRATION_6_7).build()
+        val migrated=Room.databaseBuilder(context,JamesDatabase::class.java,name).addMigrations(MIGRATION_1_2,MIGRATION_2_3,MIGRATION_3_4,MIGRATION_4_5,MIGRATION_5_6,MIGRATION_6_7,MIGRATION_7_8).build()
         try {runBlocking {assertNotNull(migrated.records().get("metadata","kept"))}} finally {migrated.close()}
         context.deleteDatabase(name)
     }
@@ -82,7 +83,7 @@ class P1PersistenceInstrumentedTest {
             legacy.execSQL("INSERT INTO records (store,recordId,kind,source,timestamp,localDate,updatedAt,rawJson) VALUES ('personalRecords','legacy-null','HealthMetric','legacy','2026-09-15T12:00:00Z','2026-09-15','2026-09-15T12:00:00Z',NULL)")
             legacy.version=5
         }
-        val migrated=Room.databaseBuilder(context,JamesDatabase::class.java,name).addMigrations(MIGRATION_5_6,MIGRATION_6_7).build()
+        val migrated=Room.databaseBuilder(context,JamesDatabase::class.java,name).addMigrations(MIGRATION_5_6,MIGRATION_6_7,MIGRATION_7_8).build()
         try {runBlocking {
             val row=migrated.records().get("personalRecords","legacy-null")
             assertNotNull(row)
@@ -115,7 +116,7 @@ class P1PersistenceInstrumentedTest {
             legacy.execSQL("INSERT INTO records (store,recordId,kind,source,timestamp,localDate,updatedAt,rawJson) VALUES ('personalRecords','shift-tracker-work:legacy','OwnershipPeriod','shift_tracker','2026-09-15T12:00:00Z','2026-09-15','2026-09-15T12:00:00Z','{\"data\":{\"externalShiftId\":\"legacy-shift\"}}')")
             legacy.version=6
         }
-        val migrated=Room.databaseBuilder(context,JamesDatabase::class.java,name).addMigrations(MIGRATION_6_7).build()
+        val migrated=Room.databaseBuilder(context,JamesDatabase::class.java,name).addMigrations(MIGRATION_6_7,MIGRATION_7_8).build()
         try {runBlocking {
             val row=migrated.records().get("personalRecords","shift-tracker-work:legacy")
             assertNotNull(row)

@@ -7,8 +7,8 @@ import kotlinx.serialization.json.JsonObject
 
 private data class PreparedStoredRaw(val value:JsonObject,val issue:String?)
 
-@Entity(tableName = "records", primaryKeys = ["store", "recordId"], indices = [Index("kind"), Index("source"), Index("localDate"), Index("timestamp"), Index(value = ["source", "externalId"]), Index(value=["source","sourceShiftId"]), Index(value=["kind","timestamp"]), Index(value=["source","kind","timestamp"]), Index(value=["store","timestamp"]), Index(value=["algorithmId","timestamp"]), Index(value=["algorithmId","calibrationVersion","timestamp"]), Index(value=["candidateStatus","timestamp"]), Index(value=["jamesDayId","algorithmId","timestamp"]), Index(value=["jamesDayId","timestamp"])])
-data class StoredRecord(val store: String, val recordId: String, val kind: String, val source: String, val timestamp: String, val localDate: String, val updatedAt: String, val externalId: String?, val rawJson: String?, val algorithmId:String?=null, val calibrationVersion:String?=null, val candidateStatus:String?=null, val jamesDayId:String?=null, val sourceShiftId:String?=null) {
+@Entity(tableName = "records", primaryKeys = ["store", "recordId"], indices = [Index("kind"), Index("source"), Index("localDate"), Index("timestamp"), Index(value = ["source", "externalId"]), Index(value=["source","sourceShiftId"]), Index(value=["kind","intervalEnd"]), Index(value=["kind","timestamp"]), Index(value=["source","kind","timestamp"]), Index(value=["store","timestamp"]), Index(value=["algorithmId","timestamp"]), Index(value=["algorithmId","calibrationVersion","timestamp"]), Index(value=["candidateStatus","timestamp"]), Index(value=["jamesDayId","algorithmId","timestamp"]), Index(value=["jamesDayId","timestamp"])])
+data class StoredRecord(val store: String, val recordId: String, val kind: String, val source: String, val timestamp: String, val localDate: String, val updatedAt: String, val externalId: String?, val rawJson: String?, val algorithmId:String?=null, val calibrationVersion:String?=null, val candidateStatus:String?=null, val jamesDayId:String?=null, val sourceShiftId:String?=null, val intervalEnd:String?=null) {
     /** Room rows are immutable. Parsing once per emitted row removes the former
      * parse-on-every-filter/map/sort behaviour without a cross-snapshot cache.
      *
@@ -38,7 +38,7 @@ data class StoredRecord(val store: String, val recordId: String, val kind: Strin
             val timestamp = raw.text("timestamp", raw.text("updatedAt", "1970-01-01T00:00:00Z"))
             val data=raw.obj("data")
             return StoredRecord(store, keyFor(store, raw), raw.text("kind", store), raw.text("source", if (store in rutStores) "rut" else "manual"), timestamp,
-                raw.text("localDate", raw.text("date", data.text("date", if (validTime(timestamp)) dayOf(timestamp) else ""))), raw.text("updatedAt"), raw.text("externalId").ifBlank { null }, canonical(raw), data.text("algorithmId").ifBlank { null }, data.text("calibrationVersion").ifBlank { null }, data.text("status").ifBlank { null }, data.text("jamesDayId").ifBlank { null }, data.text("externalShiftId").ifBlank { null })
+                raw.text("localDate", raw.text("date", data.text("date", if (validTime(timestamp)) dayOf(timestamp) else ""))), raw.text("updatedAt"), raw.text("externalId").ifBlank { null }, canonical(raw), data.text("algorithmId").ifBlank { null }, data.text("calibrationVersion").ifBlank { null }, data.text("status").ifBlank { null }, data.text("jamesDayId").ifBlank { null }, data.text("externalShiftId").ifBlank { null }, materializedIntervalEnd(raw))
         }
     }
 }
@@ -51,6 +51,7 @@ interface JamesDao {
     /** Legacy full snapshot only for explicit backup/import work. Never collect in UI state. */
     @Query("SELECT * FROM records ORDER BY store, recordId") suspend fun all(): List<StoredRecord>
     @Query("SELECT * FROM records WHERE timestamp BETWEEN :start AND :end ORDER BY timestamp") suspend fun between(start:String,end:String):List<StoredRecord>
+    @Query("SELECT * FROM records WHERE store='personalRecords' AND kind=:kind ORDER BY timestamp DESC, recordId DESC") suspend fun kindRecords(kind:String):List<StoredRecord>
     @Query("SELECT * FROM records WHERE kind=:kind AND timestamp BETWEEN :start AND :end ORDER BY timestamp") suspend fun kindBetween(kind:String,start:String,end:String):List<StoredRecord>
     @Query("SELECT * FROM records WHERE source=:source AND kind=:kind AND timestamp BETWEEN :start AND :end ORDER BY timestamp") suspend fun sourceKindBetween(source:String,kind:String,start:String,end:String):List<StoredRecord>
     /** Compatibility mappers may walk retained provider evidence, but only in
@@ -74,9 +75,13 @@ interface JamesDao {
      * legacy context kinds, never a replay of the whole records table. */
     @Query("SELECT * FROM records WHERE store='personalRecords' AND kind IN ('ContextPeriod','LocationEvent') ORDER BY timestamp") suspend fun legacyVisitEvidence():List<StoredRecord>
     @Query("SELECT * FROM records WHERE store='personalRecords' AND kind IN ('ContextPeriod','LocationEvent') AND updatedAt > :after ORDER BY updatedAt, timestamp") suspend fun legacyVisitEvidenceUpdatedAfter(after:String):List<StoredRecord>
-    @Query("SELECT * FROM records WHERE kind='CalibrationEvent' AND algorithmId=:algorithmId AND timestamp BETWEEN :start AND :end ORDER BY timestamp DESC LIMIT :limit") suspend fun calibrationEvents(algorithmId:String,start:String,end:String,limit:Int=1000):List<StoredRecord>
+    @Query("SELECT * FROM records WHERE kind='CalibrationEvent' AND algorithmId=:algorithmId AND timestamp BETWEEN :start AND :end ORDER BY timestamp DESC,recordId DESC LIMIT :limit") suspend fun calibrationEvents(algorithmId:String,start:String,end:String,limit:Int=1000):List<StoredRecord>
     @Query("SELECT * FROM records WHERE kind='CalibrationCandidate' AND algorithmId=:algorithmId AND candidateStatus IN (:statuses) ORDER BY timestamp DESC LIMIT :limit") suspend fun calibrationCandidates(algorithmId:String,statuses:List<String>,limit:Int=100):List<StoredRecord>
     @Query("SELECT * FROM records WHERE algorithmId=:algorithmId AND kind IN (:kinds) ORDER BY timestamp DESC LIMIT :limit") suspend fun calibrationRows(algorithmId:String,kinds:List<String>,limit:Int=1000):List<StoredRecord>
+    @Query("SELECT * FROM records WHERE store='personalRecords' AND kind IN ('CalendarSelection','CalendarClassificationRule') ORDER BY recordId") suspend fun calendarConfiguration():List<StoredRecord>
+    @Query("SELECT * FROM records WHERE kind='ScheduledCommitment' AND timestamp<=:end AND (timestamp>=:start OR intervalEnd>=:start) ORDER BY timestamp") fun observeCommitments(start:String,end:String):Flow<List<StoredRecord>>
+    @Query("SELECT * FROM records WHERE source=:source AND kind='ScheduledCommitment' AND timestamp<=:end AND (timestamp>=:start OR intervalEnd>=:start) ORDER BY timestamp") suspend fun sourceCommitments(source:String,start:String,end:String):List<StoredRecord>
+    @Query("SELECT * FROM records WHERE (kind='CalibrationEvent' AND recordId IN (SELECT recordId FROM records WHERE kind='CalibrationEvent' AND algorithmId=:algorithmId ORDER BY timestamp DESC,recordId DESC LIMIT :limit)) OR kind IN ('CalibrationProfile','CalibrationCandidate','CalibrationBacktest','CalibrationActivation','CalibrationAnalysis') AND algorithmId=:algorithmId ORDER BY timestamp DESC,recordId DESC") fun observeCalibrationLab(algorithmId:String,limit:Int):Flow<List<StoredRecord>>
     // Active parameter sets are long-lived configuration, not time-series data.
     // Always retain them in the bounded scoring input set or a calibration older
     // than the history window would silently stop affecting production.
@@ -85,7 +90,7 @@ interface JamesDao {
     /** A cheap readiness query.  UI must not mistake an as-yet-unloaded Room
      * stream for an actually empty James OS installation. */
     @Query("SELECT EXISTS(SELECT 1 FROM records WHERE store NOT IN ('metadata','settings','eventTemplates') AND kind NOT IN ('CalibrationProfile','CalibrationCandidate','CalibrationEvent'))") fun observeHasUserHistory():Flow<Boolean>
-    @Query("SELECT * FROM records WHERE (timestamp BETWEEN :start AND :end) OR store IN ('metadata','settings','eventTemplates') OR kind IN ('Routine','CalibrationProfile') ORDER BY timestamp, store, recordId") fun observeRouteWindow(start:String,end:String):Flow<List<StoredRecord>>
+    @Query("SELECT * FROM records WHERE (timestamp BETWEEN :start AND :end) OR (timestamp<:start AND intervalEnd>=:start) OR store IN ('metadata','settings','eventTemplates') OR kind IN ('Routine','CalibrationProfile','CalendarSelection','CalendarClassificationRule') ORDER BY timestamp, store, recordId") fun observeRouteWindow(start:String,end:String):Flow<List<StoredRecord>>
     @Query("SELECT * FROM records WHERE store = :store AND recordId = :id") suspend fun get(store: String, id: String): StoredRecord?
     /** Rare provider retractions use this indexed provenance lookup; ordinary
      * state/UI flows never scan historical shift evidence. */
@@ -105,7 +110,8 @@ interface JamesDao {
     @Insert suspend fun importHistory(record: ImportHistory)
     @Query("SELECT * FROM import_history ORDER BY timestamp DESC") fun imports(): Flow<List<ImportHistory>>
 }
-@Database(entities = [StoredRecord::class, ArchiveRecord::class, ImportHistory::class], version = 7, exportSchema = true)
+const val JAMES_DATABASE_VERSION=8
+@Database(entities = [StoredRecord::class, ArchiveRecord::class, ImportHistory::class], version = JAMES_DATABASE_VERSION, exportSchema = true)
 abstract class JamesDatabase : RoomDatabase() {
  abstract fun records(): JamesDao
 }
@@ -170,4 +176,23 @@ val MIGRATION_5_6=object:androidx.room.migration.Migration(5,6){override fun mig
 val MIGRATION_6_7=object:androidx.room.migration.Migration(6,7){override fun migrate(db:androidx.sqlite.db.SupportSQLiteDatabase){
     db.execSQL("ALTER TABLE records ADD COLUMN sourceShiftId TEXT")
     db.execSQL("CREATE INDEX IF NOT EXISTS index_records_source_sourceShiftId ON records(source,sourceShiftId)")
+}}
+
+/** Indexed interval overlap without relying on Android SQLite JSON extensions. */
+internal fun materializedIntervalEnd(raw:JsonObject):String? {
+    if(raw.text("kind") !in setOf("OwnershipPeriod","PlaceVisit","TimeBlock","ContextPeriod","LifeFactActivity","VisitInterruption","ScheduledCommitment"))return null
+    val end=raw.obj("data").text("end")
+    return when {end.isBlank()->"9999-12-31T23:59:59Z";validTime(end)->end;else->null}
+}
+
+val MIGRATION_7_8=object:androidx.room.migration.Migration(7,8){override fun migrate(db:androidx.sqlite.db.SupportSQLiteDatabase){
+    db.execSQL("ALTER TABLE records ADD COLUMN intervalEnd TEXT")
+    db.query("SELECT store,recordId,rawJson FROM records WHERE kind IN ('OwnershipPeriod','PlaceVisit','TimeBlock','ContextPeriod','LifeFactActivity','VisitInterruption','ScheduledCommitment')").use {cursor->
+        while(cursor.moveToNext()) {
+            val raw=cursor.getString(2)?.let {runCatching {json.parseToJsonElement(it) as? JsonObject}.getOrNull()}
+            val end=raw?.let(::materializedIntervalEnd)
+            if(end!=null)db.execSQL("UPDATE records SET intervalEnd=? WHERE store=? AND recordId=?",arrayOf(end,cursor.getString(0),cursor.getString(1)))
+        }
+    }
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_records_kind_intervalEnd ON records(kind,intervalEnd)")
 }}

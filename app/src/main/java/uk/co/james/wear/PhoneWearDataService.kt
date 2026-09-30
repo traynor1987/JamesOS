@@ -28,28 +28,10 @@ class PhoneWearDataService:WearableListenerService() {
         val accepted=mutableListOf<Accepted>()
         val incoming=mutableListOf<JsonObject>()
         root.array("observations").forEach {item->
-            val o=item.jsonObject
-            val id=o.text("id")
-            val type=o.text("type")
-            val stamp=java.time.Instant.ofEpochMilli(o.number("observedAt").toLong()).toString()
-            val metric=when(type) {
-                "heart_rate"->"Heart rate";"steps"->"Steps";"calories"->"Calories";"distance"->"Distance"
-                "samsung_hrv"->"HRV";"samsung_eda"->"Skin conductance";"samsung_skin_temperature"->"Skin temperature"
-                "james_stress"->"James Stress";else->return@forEach
-            }
-            val raw=personal("HealthMetric",fields(
-                "metric" to p(metric),"value" to p(o.number("value")),"unit" to p(o.text("unit")),
-                "provider" to p("uk.co.james.wear"),
-                "measurementContext" to p(when(type) {
-                    "samsung_hrv"->"SAMSUNG_SENSOR_CHECK_HRV"
-                    "samsung_eda","samsung_skin_temperature"->"SAMSUNG_SENSOR_CHECK"
-                    "james_stress"->"SAMSUNG_SENSOR_CHECK_STRESS"
-                    else->"WEAR_PASSIVE"
-                }),
-                "date" to p(dayOf(stamp))
-            ),"wear:$id",stamp).changed("source" to p("wear"),"externalId" to p(id),"updatedAt" to p(stamp))
+            val o=item as? JsonObject?:return@forEach
+            val raw=mapWearObservation(o)?:return@forEach
             incoming+=raw
-            accepted.add(Accepted(id,type,o.number("observedAt").toLong()))
+            accepted.add(Accepted(o.text("id"),o.text("type"),o.number("observedAt").toLong()))
         }
         runCatching {app.repository.externalBatch(incoming)}.getOrElse {return}
         val ack=buildJsonObject {put("schemaVersion",CompanionContract.SCHEMA_VERSION);putJsonArray("ids"){accepted.forEach {add(it.id)}}}.toString().encodeToByteArray()
@@ -78,17 +60,17 @@ class PhoneWearDataService:WearableListenerService() {
     private suspend fun receiveQuickAction(event:MessageEvent) {
         val root=runCatching {json.parseToJsonElement(event.data.decodeToString()).jsonObject}.getOrNull()?:return
         val label=root.text("label").takeIf {it in setOf("Home","Driving","Work","Walk")}?:return
-        val millis=root.number("observedAt").toLong().takeIf {it>0}?:System.currentTimeMillis()
+        val millis=root.number("observedAt").toLong().takeIf {it in 1..System.currentTimeMillis().plus(5*60_000L)}?:return
         val stamp=java.time.Instant.ofEpochMilli(millis).toString()
-        val raw=personal("Event",fields("title" to p("Watch: $label"),"category" to p("Watch quick action"),"date" to p(dayOf(stamp)),"note" to p("Logged from James OS Wear."),"end" to p(stamp)),"wear:quick:$millis:$label",stamp).changed("source" to p("wear"),"externalId" to p("wear:quick:$millis:$label"),"updatedAt" to p(stamp))
+        val raw=personal("Event",fields("title" to p("Watch: $label"),"category" to p("Watch quick action"),"date" to p(dayOf(stamp)),"note" to p("Logged from James OS Wear."),"end" to p(stamp)),recordId="wear:quick:$millis:$label",source="wear",timestamp=stamp).changed("source" to p("wear"),"externalId" to p("wear:quick:$millis:$label"),"updatedAt" to p(stamp))
         runCatching {app.repository.external(raw)}.onSuccess {app.wear.publish(app.repository.stateInputs())}
     }
     private suspend fun receiveWellbeingCheckIn(event:MessageEvent) {
         val root=runCatching {json.parseToJsonElement(event.data.decodeToString()).jsonObject}.getOrNull()?:return
         val mood=root.text("mood").takeIf {it in setOf("VERY LOW","LOW","OKAY","GOOD","GREAT")}?:return
-        val millis=root.number("observedAt").toLong().takeIf {it>0}?:System.currentTimeMillis()
+        val millis=root.number("observedAt").toLong().takeIf {it in 1..System.currentTimeMillis().plus(5*60_000L)}?:return
         val stamp=java.time.Instant.ofEpochMilli(millis).toString()
-        val raw=personal("WellbeingCheckIn",fields("mood" to p(mood),"energy" to p(""),"anxiety" to p(""),"date" to p(dayOf(stamp)),"algorithmVersion" to p(uk.co.james.state.WELLBEING_ALGORITHM_VERSION)),"wear:wellbeing:$millis",stamp).changed("source" to p("wear"),"externalId" to p("wear:wellbeing:$millis"),"updatedAt" to p(stamp))
+        val raw=personal("WellbeingCheckIn",fields("mood" to p(mood),"energy" to p(""),"anxiety" to p(""),"date" to p(dayOf(stamp)),"algorithmVersion" to p(uk.co.james.state.WELLBEING_ALGORITHM_VERSION)),recordId="wear:wellbeing:$millis",source="wear",timestamp=stamp).changed("source" to p("wear"),"externalId" to p("wear:wellbeing:$millis"),"updatedAt" to p(stamp))
         runCatching {app.repository.external(raw)}.onSuccess {app.wear.publish(app.repository.stateInputs())}
     }
     private suspend fun receiveRightNowCheckIn(event:MessageEvent) {

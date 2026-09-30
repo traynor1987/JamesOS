@@ -21,9 +21,12 @@ import uk.co.james.state.JamesAlgorithmRegistry
 
 @Composable
 fun CalibrationLabScreen(vm:JamesViewModel,algorithmId:String?=null) {
-    val rows by vm.records.collectAsStateWithLifecycle()
+    val routeState by vm.screenRecords.collectAsStateWithLifecycle()
+    val requestKey by vm.screenRequestKey.collectAsStateWithLifecycle()
+    if(!routeState.loaded||!routeState.matches(requestKey)) {AdaptiveCards(listOf({PageTitle("Calibration Lab","LOADING RETAINED EVIDENCE")}));return}
+    val rows=routeState.records
     val events by produceState<List<CalibrationObservation>>(emptyList(),rows,algorithmId) {
-        value=withContext(Dispatchers.Default) {rows.asSequence().mapNotNull(JamesCalibrationEngine::parse).filter {algorithmId==null||it.algorithmId==algorithmId}.take(4000).toList()}
+        value=withContext(Dispatchers.Default) {rows.asSequence().mapNotNull(JamesCalibrationEngine::parse).filter {algorithmId==null||it.algorithmId==algorithmId}.toList()}
     }
     if(algorithmId==null) CalibrationOverview(vm,rows,events) else CalibrationAlgorithm(vm,rows,events,algorithmId)
 }
@@ -36,6 +39,7 @@ private fun CalibrationOverview(vm:JamesViewModel,rows:List<uk.co.james.database
         add {PageTitle("Calibration Lab","JAMES IS THE GROUND TRUTH")}
         add {JamesCard("James Calibration Engine","v"+JamesCalibrationEngine.VERSION+" · ACTIVE") {
             Text(events.size.toString()+" observations")
+            Muted("Latest 5,000 retained observations per algorithm.")
             Text(supported.count {id->events.any {it.algorithmId==id.algorithmId}}.toString()+" algorithms with evidence")
             Text(candidateCount.toString()+" candidates available")
             Muted("Scores remain deterministic. Feedback is stored first; one observation never changes production.")
@@ -64,7 +68,10 @@ private fun CalibrationAlgorithm(vm:JamesViewModel,rows:List<uk.co.james.databas
     val entry=JamesAlgorithmRegistry.get(algorithmId)
     val registration=JamesCalibrationCatalog.get(algorithmId)
     if(entry==null||registration==null) {AdaptiveCards(listOf({PageTitle("Calibration","UNAVAILABLE")}));return}
-    val target by produceState<JamesViewModel.CalibrationTarget?>(null,rows,algorithmId) {value=withContext(Dispatchers.Default){vm.calibrationTarget(algorithmId)}}
+    val production by vm.calibrationProductionInputs.collectAsStateWithLifecycle()
+    val wellbeingSettings by vm.wellbeingSettings.collectAsStateWithLifecycle()
+    val energyTimeSettings by vm.energyTimeSettings.collectAsStateWithLifecycle()
+    val target by produceState<JamesViewModel.CalibrationTarget?>(null,production,algorithmId,wellbeingSettings,energyTimeSettings) {value=if(!production.loaded)null else withContext(Dispatchers.Default){currentCalibrationTarget(algorithmId,production.records,wellbeingSettings,energyTimeSettings,production.at)}}
     val metric=remember(events){JamesCalibrationEngine.evaluate(events)}
     val profiles=rows.filter {it.kind=="CalibrationProfile"&&it.data().text("algorithmId")==algorithmId}.sortedByDescending {it.timestamp}
     val active=profiles.firstOrNull {it.data().flag("active")}

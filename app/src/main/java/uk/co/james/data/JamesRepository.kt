@@ -283,7 +283,7 @@ class JamesRepository(val context: Context, val db: JamesDatabase) {
     suspend fun saveAnalysedCandidate(candidate:CandidateCalibration,result:BackTestResult,status:CandidateStatus)=db.withTransaction {
         require(status in setOf(CandidateStatus.DRAFT,CandidateStatus.TESTED))
         val entry=uk.co.james.state.JamesAlgorithmRegistry.get(candidate.algorithmId)?:error("Algorithm unavailable.")
-        val events=dao.calibrationEvents(candidate.algorithmId,"1970-01-01T00:00:00Z","9999-12-31T23:59:59Z",5000).mapNotNull(JamesCalibrationEngine::parse)
+        val events=calibrationEvidence(candidate.algorithmId).mapNotNull(JamesCalibrationEngine::parse)
         val profiles=dao.calibrationRows(candidate.algorithmId,listOf("CalibrationProfile"),1000)
         val active=JamesCalibrationEngine.activeCalibration(profiles,candidate.algorithmId,entry.calibrationVersion,entry.algorithmVersion)
         val dependencies=currentDependencyVersions(candidate.algorithmId)
@@ -312,7 +312,7 @@ class JamesRepository(val context: Context, val db: JamesDatabase) {
         require(candidate.status==CandidateStatus.TESTED){"Only a tested candidate can be activated."}
         val entry=uk.co.james.state.JamesAlgorithmRegistry.get(candidate.algorithmId)?:error("Algorithm unavailable.")
         require(candidate.algorithmVersion==entry.algorithmVersion){"Candidate is incompatible with the current algorithm."}
-        val events=dao.calibrationEvents(candidate.algorithmId,"1970-01-01T00:00:00Z","9999-12-31T23:59:59Z",5000).mapNotNull(JamesCalibrationEngine::parse)
+        val events=calibrationEvidence(candidate.algorithmId).mapNotNull(JamesCalibrationEngine::parse)
         val profiles=dao.calibrationRows(candidate.algorithmId,listOf("CalibrationProfile"),1000)
         val active=JamesCalibrationEngine.activeCalibration(profiles,candidate.algorithmId,entry.calibrationVersion,entry.algorithmVersion)
         require(JamesCalibrationEngine.candidateStalenessReason(candidate,events,active,currentDependencyVersions(candidate.algorithmId))==null){"Candidate is stale; run analysis again."}

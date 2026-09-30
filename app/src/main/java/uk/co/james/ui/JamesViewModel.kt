@@ -10,6 +10,7 @@ import kotlinx.serialization.json.*
 import uk.co.james.JamesApplication
 import uk.co.james.core.*
 import uk.co.james.database.StoredRecord
+import uk.co.james.data.*
 import uk.co.james.imports.*
 import uk.co.james.health.HealthStatus
 import uk.co.james.location.diagnostic
@@ -84,21 +85,14 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
      * scoring window remains bounded; Timeline never wakes up the whole history. */
     val screenRequestKey=combine(route,date,locationMapRange) { screen, selected, mapRange -> routeRequestKey(screen,selected,mapRange) }
         .stateIn(viewModelScope,SharingStarted.Eagerly,routeRequestKey("Today",today(),1))
+    private val resumedClock=MutableStateFlow(java.time.Instant.now())
+    private val minuteClock=flow {while(true){emit(java.time.Instant.now());delay(60_000)}}
+    val routeClock=merge(minuteClock,resumedClock).stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),java.time.Instant.now())
+    val calibrationProductionInputs=repo.observeCalibrationProductionInputs(routeClock).stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),CalibrationProductionInputs(emptyList(),false,java.time.Instant.now()))
     val screenRecords=combine(route,date,locationMapRange) { screen, selected, mapRange -> Triple(screen,selected,mapRange) }
         .flatMapLatest { (screen,selected,mapRange) ->
-            val requestKey=routeRequestKey(screen,selected,mapRange)
-            if (screen in setOf("Location","Location map")) {
-                val end=java.time.LocalDate.parse(selected).plusDays(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant()
-                val days=if(screen=="Location map") mapRange.toLong() else 14L
-                return@flatMapLatest routeRecords(requestKey,repo.dao.observePlacesContext(end.minus(java.time.Duration.ofDays(days)).toString(),end.toString()))
-            }
-            val selectedDay=runCatching { java.time.LocalDate.parse(selected) }.getOrElse { java.time.LocalDate.now() }
-            val days=when(screen) { "Timeline" -> 3L; "Insights", "Weekly review" -> 8L; "Me" -> 90L; else -> 40L }
-            // Timeline needs a small boundary context around its selected civil
-            // date in order to resolve the actual James Day, not a whole history.
-            val start=if(screen=="Timeline") selectedDay.minusDays(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant() else selectedDay.minusDays(days-1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant()
-            val end=if(screen=="Timeline") selectedDay.plusDays(2).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant() else java.time.Instant.now().plus(java.time.Duration.ofMinutes(5))
-            routeRecords(requestKey,repo.dao.observeRouteWindow(start.toString(),end.toString()))
+            val selectedDay=runCatching {java.time.LocalDate.parse(selected)}.getOrElse {java.time.LocalDate.now()}
+            routeRecords(routeRequestKey(screen,selected,mapRange),repo.observeLiveScreenRecords(screen,selectedDay,mapRange,routeClock))
         }.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),RouteRecordsState("",emptyList(),false))
     val dialog=saved.getStateFlow("dialog","")
     val draft=saved.getStateFlow("draft","{}")
@@ -337,59 +331,14 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
         repo.save("personalRecords",personal("VisitInterruption",fields("visitId" to p(visit.recordId),"reason" to p(reason),"start" to p(stamp),"end" to JsonNull,"source" to p("JAMES_CORRECTION"),"jamesDayId" to p(d.text("jamesDayId"))),source="manual",timestamp=stamp))
         message.value="Interruption recorded."
     }
-    fun mergeVisitWithPrevious(visit:StoredRecord)=action {
-        val start=visit.data().text("start").takeIf(::validTime)?.let(java.time.Instant::parse)?:return@action
-        val previous=repo.dao.visitsBetween(start.minus(java.time.Duration.ofHours(12)).toString(),start.toString()).filter {it.recordId!=visit.recordId&&it.data().text("placeId")==visit.data().text("placeId")}.maxByOrNull {it.timestamp}?:return@action
-        val p=previous.data();val v=visit.data();val end=v.text("end").takeIf(::validTime)?:return@action
-        val stamp=now()
-        val previousEvidence="visit-evidence:${previous.recordId}:$stamp";val visitEvidence="visit-evidence:${visit.recordId}:$stamp"
-        repo.save("personalRecords",personal("VisitEvidenceSnapshot",fields("visitId" to p(previous.recordId),"rawVisit" to previous.raw(),"capturedFor" to p("MERGE"),"capturedAt" to p(stamp)),recordId=previousEvidence,source="correction",timestamp=stamp))
-        repo.save("personalRecords",personal("VisitEvidenceSnapshot",fields("visitId" to p(visit.recordId),"rawVisit" to visit.raw(),"capturedFor" to p("MERGE"),"capturedAt" to p(stamp)),recordId=visitEvidence,source="correction",timestamp=stamp))
-        val merged=previous.raw().changed("data" to p.changed("end" to p(end),"durationMin" to p(java.time.Duration.between(java.time.Instant.parse(p.text("start")),java.time.Instant.parse(end)).toMinutes()),"mergedVisitIds" to p(visit.recordId),"correctionSource" to p("JAMES_CORRECTION")),"updatedAt" to p(stamp))
-        val superseded=visit.raw().changed("data" to v.changed("supersededByVisitId" to p(previous.recordId),"correctionSource" to p("JAMES_CORRECTION"),"supersededAt" to p(stamp)),"updatedAt" to p(stamp))
-        repo.save(previous.store,merged,previous.rawJson);repo.save(visit.store,superseded,visit.rawJson)
-        repo.save("personalRecords",personal("VisitCorrection",fields("visitId" to p(visit.recordId),"action" to p("MERGED_INTO"),"targetVisitId" to p(previous.recordId),"source" to p("JAMES_CORRECTION"),"previousRawEvidenceId" to p(visitEvidence),"targetRawEvidenceId" to p(previousEvidence),"reversible" to p(true)),source="manual",timestamp=stamp));message.value="Visits merged; original evidence retained."
+    fun mergeVisitWithPrevious(visitId:String,expected:String?)=action {
+        repo.mergeVisitWithPrevious(visitId,expected);close();message.value="Visits merged; original evidence retained."
     }
-    fun splitVisit(visit:StoredRecord)=action {
-        val d=visit.data();val start=d.text("start").takeIf(::validTime)?.let(java.time.Instant::parse)?:return@action;val end=d.text("end").takeIf(::validTime)?.let(java.time.Instant::parse)?:return@action
-        if(java.time.Duration.between(start,end).toMinutes()<10)return@action
-        val mid=start.plusSeconds(java.time.Duration.between(start,end).seconds/2);val stamp=now()
-        val evidenceId="visit-evidence:${visit.recordId}:$stamp"
-        repo.save("personalRecords",personal("VisitEvidenceSnapshot",fields("visitId" to p(visit.recordId),"rawVisit" to visit.raw(),"capturedFor" to p("SPLIT"),"capturedAt" to p(stamp)),recordId=evidenceId,source="correction",timestamp=stamp))
-        val first=visit.raw().changed("data" to d.changed("end" to p(mid.toString()),"durationMin" to p(java.time.Duration.between(start,mid).toMinutes()),"correctionSource" to p("JAMES_CORRECTION")),"updatedAt" to p(stamp))
-        val second=personal("PlaceVisit",d.changed("start" to p(mid.toString()),"end" to p(end.toString()),"durationMin" to p(java.time.Duration.between(mid,end).toMinutes()),"splitFromVisitId" to p(visit.recordId),"correctionSource" to p("JAMES_CORRECTION")),source="manual",timestamp=mid.toString())
-        repo.save(visit.store,first,visit.rawJson);repo.save("personalRecords",second);repo.save("personalRecords",personal("VisitCorrection",fields("visitId" to p(visit.recordId),"action" to p("SPLIT"),"targetVisitId" to p(second.text("id")),"source" to p("JAMES_CORRECTION"),"rawEvidenceId" to p(evidenceId),"reversible" to p(true)),source="manual",timestamp=stamp));message.value="Visit split at its midpoint; original evidence retained."
+    fun splitVisit(visitId:String,expected:String?)=action {
+        repo.splitVisit(visitId,expected);close();message.value="Visit split at its midpoint; original evidence retained."
     }
-    /** Reversal restores the snapshots rather than deleting any observed or
-     * derived row. The correction stays as an auditable, explicitly reverted
-     * decision, so a later import or review can still explain the history. */
-    fun revertLatestVisitCorrection(visit:StoredRecord)=action {
-        val correction=records.value.filter { row->
-            row.kind=="VisitCorrection" && row.data().text("revertedAt").isBlank() &&
-                (row.data().text("visitId")==visit.recordId||row.data().text("targetVisitId")==visit.recordId)
-        }.maxByOrNull {it.timestamp}?:run {message.value="No reversible visit correction found.";return@action}
-        val data=correction.data(); val stamp=now()
-        suspend fun restore(snapshotId:String) {
-            val snapshot=repo.dao.get("personalRecords",snapshotId)?:return
-            val original=snapshot.data().obj("rawVisit")
-            if(original.isEmpty())return
-            val current=repo.dao.get("personalRecords",original.text("id"))
-            repo.save("personalRecords",original,current?.rawJson)
-        }
-        when(data.text("action")) {
-            "MERGED_INTO" -> {
-                restore(data.text("previousRawEvidenceId"))
-                restore(data.text("targetRawEvidenceId"))
-            }
-            "SPLIT" -> {
-                restore(data.text("rawEvidenceId"))
-                val created=repo.dao.get("personalRecords",data.text("targetVisitId"))
-                if(created!=null) repo.save(created.store,created.raw().changed("data" to created.data().changed("supersededByVisitId" to p(data.text("visitId")),"supersededAt" to p(stamp),"correctionSource" to p("REVERSAL")),"updatedAt" to p(stamp)),created.rawJson)
-            }
-            else -> {message.value="That correction cannot be reversed automatically.";return@action}
-        }
-        repo.save(correction.store,correction.raw().changed("data" to data.changed("revertedAt" to p(stamp),"revertedBy" to p("JAMES_CORRECTION")),"updatedAt" to p(stamp)),correction.rawJson)
-        message.value="Visit correction reverted; all evidence remains preserved."
+    fun revertLatestVisitCorrection(visitId:String)=action {
+        repo.revertLatestVisitCorrection(visitId);close();message.value="Visit correction reverted; all evidence remains preserved."
     }
     fun logDifficultInteraction(type:String,person:String?=null)=action {
         val subtype=runCatching {uk.co.james.state.DifficultInteractionType.valueOf(type)}.getOrElse {error("Unknown interaction type.")}
@@ -430,32 +379,8 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
         repo.save("personalRecords",raw);message.value="Energy check-in saved."
     }
 
-    data class CalibrationTarget(val score:Int,val confidence:String,val jamesDayId:String?,val algorithmVersion:String,val calibrationVersion:String,val calibrationSetId:String="",val rawScore:Int?=null,val calibrationApplied:Boolean=false)
-    fun calibrationTarget(algorithmId:String):CalibrationTarget? {
-        val rows=records.value;val entry=JamesAlgorithmRegistry.get(algorithmId)?:return null
-        val right=if(algorithmId in setOf("live_energy","sleepiness","energy_sustainability","crash_risk","time_pressure"))rightNowSummary(rows,energyTimeSettings.value)else null
-        val target=when(algorithmId) {
-            "body_battery"->bodyBattery(rows).let {b->b.value?.let {CalibrationTarget(it,b.confidence,b.trace?.jamesDayId,b.algorithmVersion,b.calibrationVersion,b.calibrationSetId.orEmpty())}}
-            "live_energy"->right?.liveEnergy?.let {CalibrationTarget(it.score,it.confidence,right.jamesDay.id,it.algorithmVersion,it.calibrationVersion,it.calibrationSetId)}
-            "sleepiness"->right?.let {summary->
-                val metric=summary.sleepiness
-                val details=summary.sleepinessDetails
-                CalibrationTarget(metric.score,metric.confidence,summary.jamesDay.id,metric.algorithmVersion,metric.calibrationVersion,metric.calibrationSetId,details.rawExpressedSleepiness,details.calibrationApplied)
-            }
-            "energy_sustainability"->right?.sustainability?.let {CalibrationTarget(it.score,it.confidence,right.jamesDay.id,it.algorithmVersion,it.calibrationVersion,it.calibrationSetId)}
-            "crash_risk"->right?.crashRisk?.let {CalibrationTarget(it.score,it.confidence,right.jamesDay.id,it.algorithmVersion,it.calibrationVersion,it.calibrationSetId)}
-            "time_pressure"->right?.timePressure?.let {CalibrationTarget(it.score,it.confidence,right.jamesDay.id,it.algorithmVersion,it.calibrationVersion,it.calibrationSetId)}
-            "mental_reserve"->wellbeing.value.reserve.let {CalibrationTarget(it.score,it.confidence,null,entry.algorithmVersion,wellbeing.value.calibrationVersions["mental_reserve"]?:entry.calibrationVersion,wellbeing.value.calibrationSetIds["mental_reserve"].orEmpty())}
-            "anxiety_load"->wellbeing.value.anxiety.let {CalibrationTarget(it.score,it.confidence,null,entry.algorithmVersion,wellbeing.value.calibrationVersions["anxiety_load"]?:entry.calibrationVersion,wellbeing.value.calibrationSetIds["anxiety_load"].orEmpty())}
-            "low_mood_load"->wellbeing.value.lowMood.let {CalibrationTarget(it.score,it.confidence,null,entry.algorithmVersion,wellbeing.value.calibrationVersions["low_mood_load"]?:entry.calibrationVersion,wellbeing.value.calibrationSetIds["low_mood_load"].orEmpty())}
-            "context_load"->uk.co.james.state.currentContext(rows).let {val active=JamesCalibrationEngine.activeCalibration(rows,"context_load",entry.calibrationVersion,entry.algorithmVersion);CalibrationTarget(it.score,it.confidence,it.active?.jamesDayId,entry.algorithmVersion,active.version,active.setId)}
-            "life_balance"->uk.co.james.state.lifeBalance(rows).current.score?.let {val active=JamesCalibrationEngine.activeCalibration(rows,"life_balance",entry.calibrationVersion,entry.algorithmVersion);CalibrationTarget(it,"ROLLING",null,entry.algorithmVersion,active.version,active.setId)}
-            "life_balance_v2"->uk.co.james.state.lifeBalanceV2(rows).current.score?.let {val active=JamesCalibrationEngine.activeCalibration(rows,"life_balance_v2",entry.calibrationVersion,entry.algorithmVersion);CalibrationTarget(it,"OWNERSHIP COVERAGE",null,entry.algorithmVersion,active.version,active.setId)}
-            "james_stress"->rows.filter {it.kind=="HealthMetric"&&it.data().text("metric")=="James Stress"}.maxByOrNull {it.timestamp}?.let {val active=JamesCalibrationEngine.activeCalibration(rows,"james_stress",entry.calibrationVersion,entry.algorithmVersion);CalibrationTarget(JamesCalibrationEngine.applyActiveScore(it.data().number("value").toInt().coerceIn(0,100),rows,"james_stress"),"SOURCE",it.data().text("jamesDayId").ifBlank {null},entry.algorithmVersion,active.version,active.setId)}
-            else->null
-        }?:return null
-        return target
-    }
+    data class CalibrationTarget(val score:Int,val confidence:String,val jamesDayId:String?,val algorithmVersion:String,val calibrationVersion:String,val calibrationSetId:String="",val rawScore:Int?=null,val calibrationApplied:Boolean=false,val evidenceSnapshot:JsonObject=fields())
+    fun calibrationTarget(algorithmId:String)=currentCalibrationTarget(algorithmId,records.value,wellbeingSettings.value,energyTimeSettings.value,captureEvidence=false)
     fun calibrationOptions(algorithmId:String)=when(algorithmId) {
         "body_battery"->listOf("MUCH TOO HIGH","A LITTLE TOO HIGH","ABOUT RIGHT","A LITTLE TOO LOW","MUCH TOO LOW")
         "mental_reserve"->listOf("BRAIN GONE","MENTALLY TIRED","ABOUT RIGHT","MORE CAPACITY THAN THIS")
@@ -471,35 +396,26 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
     }
     fun calibrate(algorithmId:String,target:CalibrationTarget,submissionId:String,feedback:String,note:String="",capacity:String?=null,sleepiness:String?=null)=action {
         if(algorithmId in setOf("low_mood_load","life_balance","life_balance_v2")) {
-            val last=records.value.filter {it.kind=="CalibrationEvent"&&it.data().text("algorithmId")==algorithmId&&!it.data().flag("ignored")}.maxByOrNull {it.timestamp}
+            val last=repo.calibrationEvidence(algorithmId).filter {!it.data().flag("ignored")}.maxByOrNull {it.timestamp}
             require(last?.timestamp?.let {runCatching {java.time.Duration.between(java.time.Instant.parse(it),java.time.Instant.now()).toDays()>=6}.getOrDefault(true)}!=false){"Longitudinal calibration is weekly; a recent observation already covers this period."}
         }
         val structured=when(algorithmId) {"sleepiness"->sleepiness?.takeIf {it.isNotBlank()}?:feedback;else->capacity?.takeIf {it.isNotBlank()}?:feedback}
-        var snapshot=withContext(Dispatchers.Default){calibrationSnapshot(records.value,target.score,target.confidence,target.jamesDayId)}
+        require(target.evidenceSnapshot.isNotEmpty()){ "Reload the current prediction before saving calibration." };var snapshot=target.evidenceSnapshot
         snapshot=snapshot.changed("comparisonFeedback" to p(feedback),"primaryTarget" to p(JamesCalibrationCatalog.get(algorithmId)?.feedbackDimension?:""),"capacity" to (capacity?.let(::p)?:JsonNull),"sleepiness" to (sleepiness?.let(::p)?:JsonNull),"evidenceConfidence" to p("DIRECT_HIGH"))
         if(algorithmId in setOf("low_mood_load","life_balance","life_balance_v2"))snapshot=snapshot.changed("feedbackWindowStart" to p(java.time.Instant.now().minus(java.time.Duration.ofDays(if(algorithmId in setOf("life_balance","life_balance_v2"))14 else 7)).toString()),"feedbackWindowEnd" to p(now()),"temporalAlignment" to p("LONGITUDINAL_RETROSPECTIVE"))
-        if(algorithmId=="low_mood_load") {
-            val current=wellbeing.value.lowMood
-            val evidence=uk.co.james.state.lowMoodEvidence(records.value,current)
-            snapshot=snapshot.changed(
-                "lowMoodMoodConfidence" to p(evidence.moodConfidence),
-                "lowMoodDirectEvidence" to p(evidence.directEvidence),
-                "lowMoodInputCoverage" to p(evidence.inputCoverage),
-                "lowMoodContributors" to kotlinx.serialization.json.JsonArray(current.contributors.map {item->fields("source" to p(item.source),"contribution" to p(item.contribution),"direction" to p(item.direction),"included" to p(item.included))})
-            )
-        }
         val raw=JamesCalibrationEngine.event(algorithmId,target.score.toDouble(),structured,target.algorithmVersion,target.calibrationVersion,target.jamesDayId,snapshot,note=note,calibrationSetId=target.calibrationSetId,recordId="calibration-event:"+submissionId)
         repo.saveCalibrationEvent(raw)
-        val count=records.value.count {it.kind=="CalibrationEvent"&&it.data().text("algorithmId")==algorithmId}+1
+        val count=repo.calibrationEvidence(algorithmId).size
         message.value="Calibration saved. Observation #$count — James OS will compare it with similar observations."
     }
     fun analyseCalibration(algorithmId:String)=action {
         repo.recordCalibrationAnalysis(algorithmId,"ANALYSING")
         try {
             val entry=JamesAlgorithmRegistry.get(algorithmId)?:error("Algorithm unavailable.")
-            val events=withContext(Dispatchers.Default){records.value.mapNotNull(JamesCalibrationEngine::parse).filter {it.algorithmId==algorithmId}}
-            val active=JamesCalibrationEngine.activeCalibration(records.value,algorithmId,entry.calibrationVersion,entry.algorithmVersion)
-            val dependencies=JamesCalibrationEngine.dependencyVersions(records.value,algorithmId)
+            val inputs=repo.calibrationAnalysisInputs(algorithmId)
+            val events=withContext(Dispatchers.Default){inputs.mapNotNull(JamesCalibrationEngine::parse).filter {it.algorithmId==algorithmId}}
+            val active=JamesCalibrationEngine.activeCalibration(inputs,algorithmId,entry.calibrationVersion,entry.algorithmVersion)
+            val dependencies=JamesCalibrationEngine.dependencyVersions(inputs,algorithmId)
             val candidate=withContext(Dispatchers.Default){JamesCalibrationEngine.candidate(events,algorithmId,active.version,active.parameters,baseCalibrationSetId=active.setId,dependencyVersions=dependencies)}
             if(candidate==null) {repo.recordCalibrationAnalysis(algorithmId,"COMPLETE","More varied evidence is required.");message.value="More varied calibration evidence is needed before a safe candidate can be generated.";return@action}
             val result=withContext(Dispatchers.Default){JamesCalibrationEngine.backTest(events,candidate)}
@@ -518,7 +434,7 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
     }
 
     fun editCalibration(recordId:String,feedback:String,note:String)=action {
-        val row=records.value.firstOrNull {it.kind=="CalibrationEvent"&&it.recordId==recordId}?:error("Observation unavailable.")
+        val row=repo.dao.get("personalRecords",recordId)?.takeIf {it.kind=="CalibrationEvent"}?:error("Observation unavailable.")
         val d=row.data();val prediction=d.number("prediction")
         val observed=JamesCalibrationEngine.normalizeObserved(d.text("algorithmId"),feedback,prediction)?:error("Unsupported calibration response.")
         val error=prediction-observed
@@ -531,10 +447,10 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
     }
 
     fun ignoreCalibration(recordId:String,ignored:Boolean)=action {
-        val row=records.value.firstOrNull {it.kind=="CalibrationEvent"&&it.recordId==recordId}?:return@action
+        val row=repo.dao.get("personalRecords",recordId)?.takeIf {it.kind=="CalibrationEvent"}?:return@action
         repo.mutateCalibrationEvidence(row.raw().changed("data" to row.data().changed("ignored" to p(ignored)),"updatedAt" to p(now())),algorithmId=row.data().text("algorithmId"));message.value=if(ignored)"Observation excluded and existing candidates invalidated."else"Observation included again; run analysis for a fresh candidate."
     }
-    fun deleteCalibration(recordId:String)=action {val row=records.value.firstOrNull {it.kind=="CalibrationEvent"&&it.recordId==recordId}?:return@action;repo.mutateCalibrationEvidence(null,recordId,row.data().text("algorithmId"));message.value="Calibration observation deleted and candidates invalidated. Underlying source data was not changed."}
+    fun deleteCalibration(recordId:String)=action {val row=repo.dao.get("personalRecords",recordId)?.takeIf {it.kind=="CalibrationEvent"}?:return@action;repo.mutateCalibrationEvidence(null,recordId,row.data().text("algorithmId"));message.value="Calibration observation deleted and candidates invalidated. Underlying source data was not changed."}
 
     fun openStateCheckIn() {
         this.open("MoodEntry")
@@ -599,12 +515,13 @@ class JamesViewModel(application: Application,private val saved: SavedStateHandl
     fun theme(value: String)=action {app.preferences.theme(value);repo.setting("theme",p(value))}
     fun refreshPermissions(){viewModelScope.launch {health.value=runCatching {app.health.status()}.getOrElse {HealthStatus(false,emptySet(),it.message?:"Unavailable")}}}
     private suspend fun refreshCalendarSchedule() {
-        val selected=repo.stateInputs().filter {it.kind=="CalendarSelection"&&it.data().flag("enabled")}.map {it.data().text("calendarId")}.toSet()
+        val selected=repo.dao.calendarConfiguration().filter {it.kind=="CalendarSelection"&&it.data().flag("enabled")}.map {it.data().text("calendarId")}.toSet()
         app.calendar.refresh(selected)
     }
-    fun onAppResumed(){refreshPermissions();whoopSyncOnForeground();action { refreshCalendarSchedule() }}
+    fun onAppResumed(){resumedClock.value=java.time.Instant.now();refreshPermissions();whoopSyncOnForeground();action { refreshCalendarSchedule() }}
     fun calendarSelection(calendarId:String,name:String,enabled:Boolean)=action {
-        repo.save("personalRecords",personal("CalendarSelection",fields("calendarId" to p(calendarId),"calendarName" to p(name.take(80)),"enabled" to p(enabled),"updatedAt" to p(now())),recordId="calendar-selection:$calendarId",source="manual"))
+        val old=repo.dao.get("personalRecords","calendar-selection:$calendarId")
+        repo.save("personalRecords",personal("CalendarSelection",fields("calendarId" to p(calendarId),"calendarName" to p(name.take(80)),"enabled" to p(enabled),"updatedAt" to p(now())),recordId="calendar-selection:$calendarId",source="manual"),old?.rawJson)
         refreshCalendarSchedule()
     }
     fun refreshCalendar()=action { refreshCalendarSchedule();message.value="Calendar refreshed." }

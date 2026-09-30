@@ -300,7 +300,7 @@ object JamesCalibrationEngine {
     }
 }
 
-fun calibrationSnapshot(records:List<StoredRecord>,prediction:Int,confidence:String,jamesDayId:String?,clock:Instant=Instant.now()):JsonObject {
+fun calibrationSnapshot(records:List<StoredRecord>,prediction:Int,confidence:String,jamesDayId:String?,clock:Instant=Instant.now(),wellbeingSettings:uk.co.james.settings.WellbeingSettings=uk.co.james.settings.WellbeingSettings(),energyTimeSettings:uk.co.james.settings.EnergyTimeSettings=uk.co.james.settings.EnergyTimeSettings()):JsonObject {
     fun atOrBefore(row:StoredRecord)=runCatching {Instant.parse(row.timestamp)<=clock.plus(Duration.ofMinutes(5))}.getOrDefault(false)
     fun latestMetric(name:String)=records.filter {it.kind=="HealthMetric"&&it.data().text("metric")==name&&atOrBefore(it)}.maxByOrNull {it.timestamp}
     fun metric(name:String)=latestMetric(name)?.data()?.get("value")?:JsonNull
@@ -313,8 +313,8 @@ fun calibrationSnapshot(records:List<StoredRecord>,prediction:Int,confidence:Str
     val work=deriveCurrentWorkState(records,clock)
     val current=uk.co.james.state.currentContext(records,clock);val activity=records.filter {it.kind in setOf("Activity","Exercise","PlaceVisit","TimeBlock")&&atOrBefore(it)}.maxByOrNull {it.timestamp}
     val battery=uk.co.james.state.bodyBattery(records,clock)
-    val wellbeing=uk.co.james.state.mentalWellbeing(records,clock=clock)
-    val rightNow=uk.co.james.state.rightNowSummary(records,clock=clock)
+    val wellbeing=uk.co.james.state.mentalWellbeing(records,wellbeingSettings,clock=clock)
+    val rightNow=uk.co.james.state.rightNowSummary(records,energyTimeSettings,clock=clock)
     val life=uk.co.james.state.lifeBalance(records,clock)
     val lifeV2=uk.co.james.state.lifeBalanceV2(records,clock).current
     val sleepMinutes=latestMetric("Sleep")?.data()?.number("value",Double.NaN)?.takeIf(Double::isFinite)

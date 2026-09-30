@@ -66,3 +66,7 @@ Known v1 limitations:
 ## Next milestone
 
 Run the device matrix on a physical Galaxy Watch: permissions denied/granted, Samsung service disconnected/connected, capability detection after a reboot, 24-hour passive delivery, phone disconnect/reconnect, duplicate ACK, interrupted Channel transfer and installer confirmation. Next, add an explicit, user-enabled Samsung high-detail collection session only for tracker types the Diagnostics screen confirms.
+
+## Audit step 1 delivery retention
+
+Watch acknowledgements mark delivery state instead of deleting local readings. Pending queries select unsent rows; recent queries include retained delivered readings. The normal seven-day purge removes only delivered rows. Correlated manual sensor uploads may include already delivered recent readings, keeping their stable IDs. Wear database migration 1→2 preserves the snapshot and queue.

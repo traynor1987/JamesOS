@@ -33,7 +33,7 @@ jobs:
           JAMES_ALLOW_UNSIGNED_RELEASE: 'true'
           JAMES_VERSION_CODE: ${{ github.run_number }}
           JAMES_WEAR_VERSION_CODE: ${{ github.run_number }}
-        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug :app:assembleRelease :app:bundleRelease :app:lintRelease
+        run: gradle --no-daemon :wear-evidence:testDebugUnitTest :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug :app:assembleRelease :app:bundleRelease :app:lintRelease
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
@@ -41,6 +41,8 @@ jobs:
           path: |
             app/build/reports/
             app/schemas/
+            wear-evidence/build/reports/
+            wear/schemas/
             app/build/outputs/apk/debug/*.apk
   instrumentation:
     runs-on: ubuntu-latest
